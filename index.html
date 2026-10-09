@@ -1,0 +1,1170 @@
+<title>無盡海岸</title>
+<meta name="description" content="three.js 沙灘漫步：低解析度、五色限色盤、Bayer 有序網點。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+/* 介面：編輯排版風格。Instrument Serif（正體＋斜體），字一律白色，細線分隔，不加卡片 */
+:root{
+  --ink:#19150c;
+  --ui:#ffffff;
+  --ui-dim:rgba(255,255,255,.62);
+  --rule:rgba(255,255,255,.45);
+  --serif:"Instrument Serif","Times New Roman",serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(--ui);font-family:var(--serif)}
+#c{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);image-rendering:pixelated;image-rendering:crisp-edges;display:block;touch-action:none;cursor:crosshair}
+.hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding-inline:28px;text-shadow:0 1px 12px rgba(0,0,0,.35)}
+.hud.bottom{bottom:0;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+.dist{display:flex;flex-direction:column;gap:6px}
+.dist .num{font-size:56px;line-height:.9;font-style:italic;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.dist .num em{font-size:24px;margin-left:6px;font-style:italic;color:var(--ui-dim)}
+.dist small{font-size:13px;letter-spacing:.24em;color:var(--ui-dim);border-top:1px solid var(--rule);padding-top:6px;min-width:150px}
+.keys{display:grid;grid-template-columns:auto auto;column-gap:14px;row-gap:2px;text-align:right;font-size:16px;line-height:1.35}
+.keys b{font-weight:400;letter-spacing:.14em;font-size:12px;align-self:center;color:var(--ui-dim)}
+.keys i{font-style:italic;text-align:left}
+.keys .off{color:var(--ui-dim)}
+#streakBtn{pointer-events:auto;font:inherit;font-style:italic;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--ui);padding:0;cursor:pointer}
+#streakBtn:focus-visible{outline:1px solid var(--ui);outline-offset:3px}
+#intro{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;padding:0 28px calc(56px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(10,9,6,.78),rgba(10,9,6,.25) 50%,rgba(10,9,6,0) 75%);transition:opacity 1.6s}
+#intro.gone{opacity:0;pointer-events:none}
+#intro .kicker{font-size:13px;letter-spacing:.32em;color:var(--ui-dim);margin:0 0 10px}
+#intro h1{margin:0;font-weight:400;font-style:italic;font-size:clamp(56px,10vw,150px);line-height:.9;letter-spacing:-.02em}
+#intro .rule{width:min(520px,80vw);height:1px;background:var(--rule);margin:24px 0 20px}
+#intro p{margin:0 0 22px;max-width:28em;font-size:clamp(18px,2.2vw,24px);line-height:1.3;font-style:italic;color:var(--ui-dim)}
+#start{font:inherit;font-size:22px;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--ui);padding:0 0 4px;cursor:pointer;letter-spacing:.02em}
+#start span{display:inline-block;transition:transform .3s}
+#start:hover span{transform:translateX(6px)}
+#start:focus-visible{outline:1px solid var(--ui);outline-offset:6px}
+@media (max-width:560px){.keys{display:none}.dist .num{font-size:40px}.hud{padding-inline:16px}#intro{padding-inline:16px}}
+@media (prefers-reduced-motion:reduce){#intro{transition:none}#start span{transition:none}}
+</style>
+
+<canvas id="c" aria-label="Beach walk"></canvas>
+<div class="hud bottom" id="hud" hidden>
+  <div class="dist"><div class="num"><span id="meters">0</span><em>m</em></div><small id="seed" hidden></small></div>
+  <div class="keys" id="keys"></div>
+</div>
+<div id="intro">
+  <h1>An endless coast</h1>
+  <div class="rule"></div>
+  <button id="start" type="button">Begin walking <span>&rarr;</span></button>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ---------- 參數 ---------- */
+const PALS = [
+  { name:'黃昏', en:'DUSK', pal:['#19150c','#3c3e2d','#57473f','#63648c','#7c99e4'], accent:'#6f6d45', glow:'#4fc4bb', sun:1.0, glow:0.12, rain:0 },   // 原分析影片
+  { name:'雨夜', en:'RAIN', pal:['#0e181e','#1b2b34','#2e434d','#52656c','#8aa2aa'], accent:'#7a6238', glow:'#6fd8b0', sun:0.8, glow:0.35, rain:1 },   // 參考影片一：雨中林地
+  { name:'藍夜', en:'NIGHT', pal:['#14141f','#2a2d44','#3b3d70','#5557b8','#8285f0'], accent:'#66664a', glow:'#9f8cff', sun:0.75, glow:0.6, rain:0 },   // 參考影片二：藍紫夜景、腳下光暈
+];
+const toVec = h => { const c = new THREE.Color(); c.setStyle(h, THREE.LinearSRGBColorSpace); return new THREE.Vector3(c.r, c.g, c.b); };
+const PAL = PALS[0].pal;
+const BASE_H = 540;            // 內部解析度（短邊約 400 實體像素）
+const CH = 48;                 // 每段地形長度（公尺）
+const WALK = 1.55, RUN = 3.2;  // 行走速度
+
+/* ---------- 共用數學（JS 與 GLSL 必須一致） ---------- */
+// 海岸線：多組不成倍數的正弦疊加，看起來不規則；整體往海那側退，沙灘更寬
+// 隨機種子：決定海岸線形狀、岬角、廢墟密度與沿途天氣。網址加 #s12345 可重現同一片海岸，按 N 換一個
+let SEED = (() => { const m = location.hash.match(/^#s(\d{1,6})$/); return m ? +m[1] : Math.floor(Math.random()*1e5); })();
+const SP = [0,0,0,0,0,0,1,1];   // 0-5 相位、6 大彎幅度、7 崖線起伏
+function seedParams(){ const r = mulberry(SEED*7 + 3); for (let i=0;i<6;i++) SP[i] = r()*6.2832; SP[6] = 0.5 + r()*1.1; SP[7] = 0.6 + r()*0.9; }
+const shoreZ = x => 3*Math.sin(x*0.031+SP[0]) + 1.6*Math.sin(x*0.077+SP[1]) + 5*SP[6]*Math.sin(x*0.0123+SP[2]) + 2.4*Math.sin(x*0.0191+SP[3])*Math.sin(x*0.0047+SP[4]) + 51;
+const cliffZ = x => -52 +   // 崖線往內陸退，沙灘更寬闊
+  5*SP[7]*Math.sin(x*0.018+SP[5]) + 2*Math.sin(x*0.05+SP[1]);
+const swash  = (x,t) => Math.pow(0.5+0.5*Math.sin(t*0.5 + x*0.02 + 0.8*Math.sin(t*0.13 + x*0.004)), 1.6);
+// 浪能湧上來多遠也隨時間和地點起伏（3.5～8.5 公尺）
+const reach  = (x,t) => 3.5 + 5*(0.5 + 0.5*Math.sin(t*0.061 + x*0.0083 + 1.7*Math.sin(x*0.0021 + SP[5])));
+let REC = 0;   // 末日事件「大退潮」：海水往外退的距離（公尺）
+const front  = (x,t) => shoreZ(x) - 0.5 - reach(x,t)*swash(x,t) + REC;
+const smooth = (a,b,v) => { const t = Math.min(1, Math.max(0, (v-a)/(b-a))); return t*t*(3-2*t); };
+function hash2(x,y){ let h = Math.imul(x|0, 374761393) + Math.imul(y|0, 668265263); h = Math.imul(h ^ (h>>>13), 1274126177); return ((h ^ (h>>>16)) >>> 0) / 4294967296; }
+function vn(x,y){ const ix=Math.floor(x), iy=Math.floor(y); let fx=x-ix, fy=y-iy; fx=fx*fx*(3-2*fx); fy=fy*fy*(3-2*fy);
+  const a=hash2(ix,iy), b=hash2(ix+1,iy), c=hash2(ix,iy+1), d=hash2(ix+1,iy+1);
+  return (a+(b-a)*fx) + ((c+(d-c)*fx) - (a+(b-a)*fx))*fy; }
+function mulberry(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed); t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14) >>> 0) / 4294967296; }; }
+
+function height(x,z){
+  const z0 = shoreZ(x); let y;
+  if (z > z0) y = -(z - z0)*0.07;
+  else {
+    const d = z0 - 10 - z;
+    y = d > 0 ? Math.min(d*0.045, 1.1) + (vn(x*0.13, z*0.13)-0.5)*0.7*Math.min(d/6,1) : 0;
+  }
+  const k = cliffZ(x) - z;
+  if (k > 0) y += 1.3*smooth(0,1.6,k) + 2.2*smooth(6,8,k) + 4.5*smooth(14,16.5,k) + 9*smooth(24,29,k) + 6*smooth(36,40,k);
+  return y;
+}
+
+const GLSL = /* glsl */`
+uniform float uTime; uniform vec4 uSP; uniform vec4 uSQ;
+varying vec3 vWPos;
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+  return mix(mix(hash12(i),hash12(i+vec2(1,0)),f.x), mix(hash12(i+vec2(0,1)),hash12(i+vec2(1,1)),f.x), f.y); }
+float shoreZ(float x){ return 3.0*sin(x*0.031+uSP.x) + 1.6*sin(x*0.077+uSP.y) + 5.0*uSQ.z*sin(x*0.0123+uSP.z) + 2.4*sin(x*0.0191+uSP.w)*sin(x*0.0047+uSQ.x) + 51.0; }
+float swash(float x,float t){ return pow(0.5+0.5*sin(t*0.5 + x*0.02 + 0.8*sin(t*0.13 + x*0.004)), 1.6); }
+float reach(float x,float t){ return 3.5 + 5.0*(0.5 + 0.5*sin(t*0.061 + x*0.0083 + 1.7*sin(x*0.0021 + uSQ.y))); }
+float frontZ(float x,float t){ return shoreZ(x) - 0.5 - reach(x,t)*swash(x,t) + uSQ.w; }
+float cloudShade(vec3 w){
+  vec2 p = w.xz*0.022 + vec2(uTime*0.018, uTime*0.007);
+  float n = vnoise(p)*0.55 + vnoise(p*2.3+7.)*0.3 + vnoise(p*5.1+3.)*0.15;
+  return mix(0.6, 1.12, smoothstep(0.32, 0.72, n));
+}
+`;
+
+/* ---------- 渲染器：低解析 render target → 調色盤網點 ---------- */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:false, powerPreference:'high-performance' });
+renderer.setPixelRatio(1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.BasicShadowMap;
+const rt = new THREE.WebGLRenderTarget(4, 4, { minFilter:THREE.NearestFilter, magFilter:THREE.NearestFilter, type:THREE.HalfFloatType });
+rt.depthTexture = new THREE.DepthTexture(4, 4); rt.depthTexture.type = THREE.UnsignedIntType;   // 給輪廓線判斷前後
+
+const U = { uTime:{ value:0 }, uSP:{ value: new THREE.Vector4() }, uSQ:{ value: new THREE.Vector4() } };
+function syncSeedUniforms(){ U.uSP.value.set(SP[0], SP[1], SP[2], SP[3]); U.uSQ.value.set(SP[4], SP[5], SP[6], REC); }
+seedParams(); syncSeedUniforms();
+const scene = new THREE.Scene();
+const FOG = new THREE.Color(0.46, 0.46, 0.46);
+scene.background = FOG.clone();
+scene.fog = new THREE.Fog(FOG.clone(), 1e5, 2e5);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.08, 1700);
+// 鏡頭：人物背後中低角度跟拍（參考 Coldplay〈Yellow〉MV），看得到海平線
+let camYaw = 0;   // 人物前進方向（0 = 沿海岸往 +x）
+// 鏡位：o = { x, y, z, f:[fx,fz], r:[rx,rz] }，回傳鏡頭位置與注視點（世界座標）
+const SHOTS = [
+  { id:'TELE', fov:22, k:2.2, w:3,  // 主鏡頭：背後遠距離望遠跟拍（偏海側），長焦把沿岸廢墟壓縮成一整排
+    at:o => [o.x - o.f[0]*110 + o.r[0]*15, o.y + 13.5, o.z - o.f[1]*110 + o.r[1]*15,   // 拉遠：110 公尺外
+             o.x + o.f[0]*10 + o.r[0]*5, o.y + 3, o.z + o.f[1]*10 + o.r[1]*5] },
+];
+const cam = { shot: 0, cinema: false,   // 只留 TELE 一個鏡頭，不再自動切換
+  next: 14, orbit: 0, orbitT: 0, zoom: 1, zoomT: 1, still: new THREE.Vector3() };
+function placeStill(o){ cam.still.set(o.x - o.f[0]*28 + o.r[0]*10, 0, o.z - o.f[1]*28 + o.r[1]*10); cam.still.y = height(cam.still.x, cam.still.z) + 1.7; }
+function cutTo(i, o){ cam.shot = i; if (SHOTS[i].still) placeStill(o); cam.snap = true; renderKeys(); }
+
+const post = new THREE.ShaderMaterial({
+  uniforms:{
+    tScene:{ value: rt.texture }, tDepth:{ value: rt.depthTexture }, res:{ value: new THREE.Vector2(4,4) },
+    cn:{ value: 0.08 }, cf:{ value: 1200 }, fogN:{ value: 40 }, fogF:{ value: 430 },
+    pal:{ value: PAL.map(toVec) }, accent:{ value: toVec(PALS[0].accent) }, glowC:{ value: toVec(PALS[0].glow) },
+    lo:{ value: 0.10 }, hi:{ value: 0.86 }, flash:{ value: 0 }
+  },
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
+  fragmentShader:`
+    uniform sampler2D tScene; uniform sampler2D tDepth; uniform vec2 res; uniform float cn, cf, fogN, fogF; uniform vec3 pal[5]; uniform vec3 accent; uniform vec3 glowC; uniform float lo, hi, flash; varying vec2 vUv;
+    float bayer2(vec2 a){ a=floor(a); return fract(dot(a, vec2(.5, a.y*.75))); }
+    float bayer4(vec2 a){ return bayer2(.5*a)*.25 + bayer2(a); }
+    float lin(vec2 uv){ float z = texture2D(tDepth, uv).x*2.-1.; return 2.*cn*cf/(cf+cn - z*(cf-cn)); }
+    float lum(vec3 c){ return pow(max(dot(c, vec3(.299,.587,.114)), 0.), 1./2.2); }
+    void main(){
+      vec4 c4 = texture2D(tScene, vUv);
+      vec3 c = c4.rgb;
+      float l = pow(max(dot(c, vec3(.299,.587,.114)), 0.), 1./2.2);
+      float v = clamp((l-lo)/(hi-lo), 0., 1.) * 4.;
+      float i = clamp(floor(v + bayer4(gl_FragCoord.xy)), 0., 4.);
+      vec3 o = i < .5 ? pal[0] : i < 1.5 ? pal[1] : i < 2.5 ? pal[2] : i < 3.5 ? pal[3] : pal[4];
+      if (c.r - c.b > 0.12) o = accent;
+      gl_FragColor = vec4(o, 1.);
+    }`,
+  depthTest:false, depthWrite:false
+});
+const postScene = new THREE.Scene();
+const postCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), post));
+
+let RW = 4, RH = 4, SCALE = 3;
+function resize(){
+  const W = innerWidth, H = innerHeight;
+  const dpr = Math.min(devicePixelRatio || 1, 3), DW = W*dpr, DH = H*dpr;
+  SCALE = Math.max(2, Math.round(Math.min(DW, DH) / BASE_H));
+  RW = Math.ceil(DW / SCALE); RH = Math.ceil(DH / SCALE);
+  renderer.setSize(RW, RH, false);
+  canvas.style.width = RW*SCALE/dpr + 'px'; canvas.style.height = RH*SCALE/dpr + 'px';
+  rt.setSize(RW, RH); rt.depthTexture.image.width = RW; rt.depthTexture.image.height = RH; post.uniforms.res.value.set(RW, RH);
+  camera.aspect = RW / RH;
+  // 直式螢幕時把鏡頭拉遠一點，讓海岸寬度夠看
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ---------- 材質 ---------- */
+function patch(mat, wet, struct){
+  mat.customProgramCacheKey = () => 'beach' + (wet ? 'W' : '') + (struct ? 'S' : '');   // 不同變體不能共用同一個編譯結果
+  mat.onBeforeCompile = s => {
+    s.uniforms.uTime = U.uTime; s.uniforms.uSP = U.uSP; s.uniforms.uSQ = U.uSQ;
+    s.vertexShader = 'varying vec3 vWPos;\n' + s.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      vec4 wp_ = vec4(transformed, 1.0);
+      #ifdef USE_INSTANCING
+        wp_ = instanceMatrix * wp_;
+      #endif
+      vWPos = (modelMatrix * wp_).xyz;`);
+    s.fragmentShader = GLSL + s.fragmentShader.replace('#include <opaque_fragment>', `
+      outgoingLight *= cloudShade(vWPos);
+      ${wet ? `
+      float zf = vWPos.z - (shoreZ(vWPos.x) - 9.5);
+      outgoingLight *= mix(1.0, 0.7, smoothstep(0.0, 1.2, zf));
+      float sheen = smoothstep(1.6, 0.0, frontZ(vWPos.x, uTime) - vWPos.z) * step(vWPos.z, frontZ(vWPos.x, uTime));
+      outgoingLight *= 1.0 - 0.25*sheen;` : ''}
+      #include <opaque_fragment>
+      ${struct ? 'gl_FragColor.a = 0.5;' : ''}`);
+  };
+  return mat;
+}
+const sandMat  = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.30,0.30,0.30), flatShading:true }), true);
+// 結構體在輸出時把 alpha 寫成 0.5（不透明渲染不混色），後製靠它判斷要不要描輪廓
+const cliffMat = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.40,0.40,0.40), flatShading:true }), false, true);
+const rockMat  = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.46,0.46,0.46), flatShading:true }), false, true);
+const monoMat  = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.55,0.55,0.55), flatShading:true }), false, true);
+const inkMat   = new THREE.MeshBasicMaterial({ color: 0x000000, fog:false });   // 角色不吃霧，拉遠也一樣黑
+
+/* ---------- 光 ---------- */
+const hemi = new THREE.HemisphereLight(0xffffff, 0x555555, 0.28);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 2.6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-80, right:80, top:80, bottom:-80, near:1, far:260 });
+sun.shadow.bias = -0.0015;
+scene.add(sun, sun.target);
+const SUN_OFF = new THREE.Vector3(-55, 70, -48);
+
+/* ---------- 地形分段（無限海岸） ---------- */
+function rockGeo(rng, a, b, c){
+  const e = Math.min(a,b,c)*0.35, pts = [];
+  for (const sx of [-1,1]) for (const sy of [-1,1]) for (const sz of [-1,1]){
+    const j = () => (rng()-0.5)*Math.min(a,b,c)*0.35;
+    pts.push(new THREE.Vector3(sx*a+j(), sy*(b-e)+j(), sz*(c-e)+j()));
+    pts.push(new THREE.Vector3(sx*(a-e)+j(), sy*b+j(), sz*(c-e)+j()));
+    pts.push(new THREE.Vector3(sx*(a-e)+j(), sy*(b-e)+j(), sz*c+j()));
+  }
+  return new ConvexGeometry(pts);
+}
+// 廢墟大樓（參考《全面啟動》Limbo 的海岸）：只剩樓板與外圍柱的現代主義骨架，頂部斷裂
+function slabGeo(rng, w, d, floors, intact=false){   // intact：下層段落，頂部不殘缺，上一段才接得上
+  const FH = 3.4, H = floors*FH, parts = [];
+  const bx = (sx, sy, sz, x, y, z) => { const g = new THREE.BoxGeometry(sx, sy, sz); g.translate(x, y, z); parts.push(g); };
+  const topCut = () => intact ? H : H - rng()*FH*4;
+  for (let f=0; f<=floors; f++){
+    const y = f*FH;
+    if (!intact && f > floors - 4 && rng() < 0.45) {        // 頂部幾層殘缺，但殘塊一定搭在核心筒上，不會懸空
+      const pw = w*(0.35 + rng()*0.5); bx(pw, 0.4, d*(0.4+rng()*0.6), (rng()-0.5)*pw*0.6, y, (rng()-0.5)*d*0.15); continue;
+    }
+    bx(w, 0.4, d, 0, y, 0);
+    if (rng() < 0.35) bx(w*0.98, FH*0.42, 0.18, 0, y + FH*0.3, (rng()<0.5?-1:1)*d/2);   // 窗下牆
+  }
+  const nx = Math.max(2, Math.round(w/4.5)), nz = Math.max(2, Math.round(d/4.5));
+  for (let i=0;i<=nx;i++) for (const sz of [-1,1]){ const h = topCut(); bx(0.55, h, 0.55, -w/2 + i*w/nx, h/2, sz*d/2); }
+  for (let j=1;j<nz;j++) for (const sx of [-1,1]){ const h = topCut(); bx(0.55, h, 0.55, sx*w/2, h/2, -d/2 + j*d/nz); }
+  bx(w*0.3, H, d*0.3, 0, H/2, 0);          // 核心筒：一路通到頂，所有樓板都有支撐
+  // 科幻量體：頂部天線桅杆、側面懸挑的方塊
+  const nm = Math.floor(rng()*3);
+  for (let i=0;i<nm;i++){ const mh = H*(0.15 + rng()*0.4); bx(0.7, mh, 0.7, (rng()-0.5)*w*0.24, H + mh/2 - FH*2, (rng()-0.5)*d*0.24); }   // 桅杆立在核心筒上
+  if (rng() < 0.5){ const cy = H*(0.4 + rng()*0.45), cw = w*(0.4+rng()*0.4); bx(cw, FH*2.5, d*0.6, (rng()<0.5?-1:1)*(w/2 + cw*0.3), cy, 0); }
+  const g = mergeGeometries(parts); parts.forEach(p => p.dispose()); return g;
+}
+// 建築造型隨機：板樓、退縮、雙塔、圓塔（螺旋扭轉樓已取消）
+function towerGeo(rng, w, d, floors){
+  const u = rng(), FH = 3.4;
+  if (u < 0.38) return slabGeo(rng, w, d, floors);
+  if (u < 0.6){   // 退縮：2～3 段越往上越窄
+    const n = 2 + Math.floor(rng()*2), list = []; let y = 0;
+    for (let i=0;i<n;i++){ const f = Math.max(3, Math.round(floors/n*(1 - i*0.1))), k = 1 - i*(0.18 + rng()*0.1);
+      const g = slabGeo(rng, w*k, d*k, f, i < n-1); g.translate((rng()-0.5)*w*0.06, y, (rng()-0.5)*d*0.06); list.push(g); y += f*FH; }
+    return mergeAll(list);
+  }
+  if (u < 0.8){   // 雙塔＋空橋
+    const f1 = floors, f2 = Math.max(4, Math.round(floors*(0.55 + rng()*0.4)));
+    const a = slabGeo(rng, w*0.45, d, f1); a.translate(-w*0.32, 0, 0);
+    const b = slabGeo(rng, w*0.45, d*0.85, f2); b.translate(w*0.32, 0, 0);
+    const list = [a, b];
+    for (let i=0;i<1+Math.floor(rng()*3);i++){ const g = new THREE.BoxGeometry(w*0.25, FH*1.2, d*0.25); g.translate(0, FH*(3 + Math.floor(rng()*Math.max(1, f2-7))), (rng()-0.5)*d*0.4); list.push(g); }
+    return mergeAll(list);
+  }
+  const H = floors*FH, list = [], r = Math.min(w, d)*0.6;
+  {   // 圓塔：圓形樓板、一圈柱子、頂部殘缺
+    for (let f=0; f<=floors; f++){ if (f > floors-3 && rng() < 0.5) continue; const g = new THREE.CylinderGeometry(r, r, 0.4, 14, 1, false, 0, f > floors-5 ? 3.5 + rng()*2.7 : Math.PI*2); g.translate(0, f*FH, 0); list.push(g); }
+    for (let i=0;i<12;i++){ const a = i/12*Math.PI*2, h = H - rng()*FH*5; const g = new THREE.BoxGeometry(0.6, h, 0.6); g.translate(Math.cos(a)*r*0.95, h/2, Math.sin(a)*r*0.95); list.push(g); }
+    const c = new THREE.CylinderGeometry(r*0.3, r*0.3, H, 8); c.translate(0, H/2, 0); list.push(c);
+    return mergeAll(list);
+  }
+}
+// 擱淺的巨型船艦：外星戰艦（楔形、背鰭、尖刺）與人類軍艦（船身、艦橋、桅杆）
+const P3 = (x,y,z) => new THREE.Vector3(x,y,z);
+// 合併任何幾何（盒子、圓柱、凸包）：統一轉成非索引、去掉 uv
+function mergeAll(list){
+  const out = list.map(g => { const n = g.index ? g.toNonIndexed() : g; if (n.attributes.uv) n.deleteAttribute('uv'); if (!n.attributes.normal) n.computeVertexNormals(); return n; });
+  const m = mergeGeometries(out); list.forEach(g => g.dispose()); return m;
+}
+const darkMat = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.06,0.06,0.06), flatShading:true }));
+function kit(){
+  const k = { body:[], dark:[] };
+  k.box = (arr, sx, sy, sz, x, y, z, rx=0, ry=0, rz=0) => { const g = new THREE.BoxGeometry(sx, sy, sz); g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); k[arr].push(g); };
+  k.cyl = (arr, r1, r2, h, x, y, z, rx=0, ry=0, rz=0, seg=8) => { const g = new THREE.CylinderGeometry(r1, r2, h, seg); g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); k[arr].push(g); };
+  k.hull = (arr, pts) => k[arr].push(new ConvexGeometry(pts));
+  k.build = grp => { if (k.body.length) grp.add(new THREE.Mesh(mergeAll(k.body), towerMat)); if (k.dark.length) grp.add(new THREE.Mesh(mergeAll(k.dark), darkMat)); };
+  return k;
+}
+// 外星戰艦：楔形主艦體＋背脊肋骨＋層疊裝甲＋側艙＋引擎群＋背鰭天線＋機庫開口＋斷裂的骨架
+function alienShip(rng){
+  const L = 260 + rng()*240, W = L*(0.16 + rng()*0.08), H = L*0.11, grp = new THREE.Group(), k = kit();
+  k.hull('body', [P3(L/2,0,0), P3(L*0.1,H*0.55,0), P3(-L/2,H*0.4,0), P3(-L/2,-H*0.3,0), P3(L*0.05,-H*0.45,0),
+    P3(-L*0.3,0,W/2), P3(-L*0.3,0,-W/2), P3(L*0.15,0,W*0.3), P3(L*0.15,0,-W*0.3), P3(-L/2,H*0.1,W*0.42), P3(-L/2,H*0.1,-W*0.42)]);
+  const topY = x => x > L*0.1 ? H*0.55*(L/2 - x)/(L*0.4) : H*0.4 + (H*0.15)*(x + L/2)/(L*0.6);
+  const halfW = x => x > L*0.15 ? W*0.3*(L/2 - x)/(L*0.35) : x > -L*0.3 ? W*0.3 + W*0.2*(L*0.15 - x)/(L*0.45) : W*0.45;
+  // 背脊肋骨
+  for (let x = -L*0.46; x < L*0.32; x += L*0.035) k.box('body', L*0.008, H*0.12, halfW(x)*1.1, x, topY(x) - H*0.02, 0);
+  // 層疊裝甲板
+  for (let i=0;i<7;i++){ const x = -L*0.42 + i*L*0.11, w = halfW(x);
+    k.hull('body', [P3(x - L*0.05, topY(x), -w*0.55), P3(x - L*0.05, topY(x), w*0.55), P3(x + L*0.05, topY(x)+H*0.02, -w*0.35), P3(x + L*0.05, topY(x)+H*0.02, w*0.35), P3(x - L*0.03, topY(x)+H*0.09, 0)]); }
+  // 背脊中央的溝槽
+  k.box('dark', L*0.62, H*0.05, W*0.05, -L*0.1, topY(-L*0.1) + H*0.07, 0);
+  // 側艙
+  for (const sd of [-1,1]) for (let i=0;i<2;i++){ const x = -L*0.32 + i*L*0.2, z = sd*halfW(x)*0.95;
+    k.hull('body', [P3(x+L*0.09,0,z), P3(x-L*0.07,H*0.12,z), P3(x-L*0.07,-H*0.1,z), P3(x-L*0.07,0,z+sd*W*0.12), P3(x+L*0.02,0,z+sd*W*0.08)]); }
+  // 引擎群
+  const ne = 3 + Math.floor(rng()*3);
+  for (let i=0;i<ne;i++){ const z = (i - (ne-1)/2) * W*0.75/ne, y = H*(0.05 + 0.1*Math.sin(i)), r = H*0.12;
+    k.cyl('body', r, r*1.25, L*0.1, -L/2 - L*0.04, y, z, 0, 0, Math.PI/2);
+    k.cyl('dark', r*0.9, r*0.9, L*0.01, -L/2 - L*0.095, y, z, 0, 0, Math.PI/2);
+    k.cyl('dark', r*0.55, r*0.55, L*0.012, -L/2 - L*0.097, y, z, 0, 0, Math.PI/2); }
+  // 背鰭與天線陣列
+  k.hull('body', [P3(-L*0.25,H*0.35,2), P3(-L*0.25,H*0.35,-2), P3(-L*0.48,H*1.3,1), P3(-L*0.48,H*1.3,-1), P3(-L*0.05,H*0.45,2), P3(-L*0.05,H*0.45,-2)]);
+  for (let i=0;i<5;i++){ const ah = H*(0.2 + rng()*0.35); k.box('body', 0.8, ah, 0.8, -L*0.475 + i*L*0.004, H*1.25 + ah/2, (i - 2)*0.6); }   // 天線立在背鰭頂端
+  // 尖刺
+  for (let i=0;i<8+Math.floor(rng()*8);i++){ const sx = -L*0.4 + rng()*L*0.6, sz = (rng()-0.5)*W*0.2, sh = H*(0.3+rng()*0.6), y0 = topY(sx);
+    k.hull('body', [P3(sx-6,y0-H*0.08,sz-6), P3(sx+6,y0-H*0.08,sz-6), P3(sx,y0-H*0.08,sz+6), P3(sx+rng()*8,y0+sh,sz)]); }
+  // 更多幾何：船首雙叉、脊上成排小刺、側舷鋸齒裝甲、管線、尾部環架、腹鰭、天線碟、表面細碎結構
+  for (const sd of [-1,1]){
+    k.hull('body', [P3(L*0.2, H*0.05, sd*W*0.12), P3(L*0.2, H*0.25, sd*W*0.2), P3(L*0.2, -H*0.15, sd*W*0.22), P3(L*0.62, H*0.02, sd*W*0.3), P3(L*0.45, H*0.12, sd*W*0.26)]);
+    for (let i=0;i<9;i++){ const x = -L*0.44 + i*L*0.075, z = sd*halfW(x);
+      k.hull('body', [P3(x - L*0.035, H*0.15, z*0.92), P3(x + L*0.03, H*0.12, z*0.92), P3(x - L*0.035, -H*0.12, z*0.92), P3(x - L*0.01, H*0.0, z + sd*W*(0.06 + rng()*0.06))]); }
+    for (let i=0;i<3;i++) k.cyl('dark', H*0.025, H*0.025, L*0.7, -L*0.12, H*(0.18 - i*0.09), sd*halfW(-L*0.12)*1.02, 0, 0, Math.PI/2, 6);
+    k.hull('body', [P3(-L*0.3, -H*0.25, sd*W*0.15), P3(-L*0.05, -H*0.3, sd*W*0.12), P3(-L*0.38, -H*0.85, sd*W*0.3), P3(-L*0.3, -H*0.25, sd*W*0.2)]);
+  }
+  for (let x = -L*0.4; x < L*0.25; x += L*0.022){ const sh = H*(0.08 + rng()*0.18);
+    k.hull('body', [P3(x - 2.5, topY(x), -2.5), P3(x + 2.5, topY(x), -2.5), P3(x, topY(x), 2.5), P3(x - 3, topY(x) + sh, 0)]); }
+  const rx = -L*0.47, rr = Math.max(W, H)*0.55;
+  for (let i=0;i<14;i++){ const a = i/14*Math.PI*2; k.box('body', L*0.015, rr*0.45, H*0.06, rx, H*0.1 + Math.sin(a)*rr, Math.cos(a)*rr, a, 0, 0); }
+  for (let i=0;i<4;i++){ const a = i/4*Math.PI*2 + 0.4; k.box('body', L*0.01, rr*0.9, H*0.03, rx, H*0.1 + Math.sin(a)*rr*0.5, Math.cos(a)*rr*0.5, a, 0, 0); }
+  k.cyl('body', H*0.35, 1, H*0.12, L*0.02, topY(L*0.02) + H*0.25, W*0.08, 0.3, 0, 0.2, 10);
+  k.box('body', 1, H*0.25, 1, L*0.02, topY(L*0.02) + H*0.12, W*0.08);
+  for (let i=0;i<90;i++){ const x = -L*0.45 + rng()*L*0.7, z = (rng()-0.5)*halfW(x)*0.3, sx = L*(0.005 + rng()*0.02), sy = H*(0.02 + rng()*0.06);
+    k.box(rng() < 0.25 ? 'dark' : 'body', sx, sy + H*0.06, sx*(0.5 + rng()), x, topY(x) + sy*0.5 - H*0.03, z, 0, rng() < 0.5 ? 0 : Math.PI/4, 0); }   // 細碎結構貼在背脊上
+  // 機庫開口
+  for (const sd of [-1,1]){
+    for (let i=0;i<4;i++){ const x = -L*0.25 + i*L*0.1; k.box('dark', L*0.06, H*0.1, 1.5, x, H*0.02, sd*halfW(x)*0.98, 0, 0, 0); }
+  }
+  k.build(grp);
+  return { grp, L, H };
+}
+// 人類軍艦：戰艦（多層艦橋、煙囪、砲塔、雷達、舷窗、救生艇）或航空母艦（斜角甲板、艦島、艦載機）
+function humanShip(rng){
+  const L = 180 + rng()*160, W = L*0.13, H = L*0.075, grp = new THREE.Group(), carrier = rng() < 0.45, k = kit();
+  const pts = [P3(L/2, H, 0), P3(L/2 - L*0.1, -H*0.7, 0)];
+  for (const x of [L*0.3, 0, -L*0.35, -L/2]) for (const sd of [-1,1]){ pts.push(P3(x, H, sd*W/2)); pts.push(P3(x, -H*0.7, sd*W*0.38)); }
+  k.hull('body', pts);
+  // 船殼外板條紋與舷窗
+  for (const sd of [-1,1]){
+    k.box('body', L*0.78, 0.7, 0.6, -L*0.08, H*0.55, sd*W*0.5);
+    k.box('body', L*0.7, 0.7, 0.6, -L*0.1, H*0.15, sd*W*0.47);
+    for (let i=0;i<34;i++) k.box('dark', L*0.008, H*0.06, 0.4, -L*0.44 + i*L*0.023, H*0.78, sd*(W*0.5 + 0.2));
+    k.box('dark', L*0.85, H*0.12, 0.4, -L*0.05, -H*0.12, sd*(W*0.44));   // 吃水線
+  }
+  if (carrier){
+    // 飛行甲板＋斜角甲板
+    k.box('body', L*1.02, H*0.16, W*1.5, -L*0.02, H*1.08, W*0.12);
+    k.box('body', L*0.45, H*0.15, W*0.7, -L*0.2, H*1.08, -W*0.55, 0, 0.16, 0);
+    for (let i=0;i<9;i++) k.box('dark', L*0.04, 0.1, 0.8, L*0.4 - i*L*0.09, H*1.17, W*0.12);   // 甲板中線
+    k.box('dark', L*0.5, 0.1, 0.8, -L*0.15, H*1.17, -W*0.35, 0, 0.16, 0);
+    // 舷側升降機
+    for (const x of [L*0.1, -L*0.2]) k.box('body', L*0.07, H*0.12, W*0.25, x, H*1.0, W*0.95);
+    // 艦島
+    const ix = -L*0.05, iz = W*0.62;
+    k.box('body', L*0.12, H*0.9, W*0.2, ix, H*1.6, iz);
+    k.box('body', L*0.08, H*0.5, W*0.17, ix + L*0.01, H*2.3, iz);
+    k.box('dark', L*0.081, H*0.1, W*0.172, ix + L*0.01, H*2.4, iz);
+    k.box('body', 1.2, H*1.4, 1.2, ix, H*3.1, iz);
+    k.box('body', W*0.35, 0.5, 0.5, ix, H*3.4, iz);
+    k.cyl('body', W*0.12, W*0.12, 0.6, ix + L*0.03, H*2.65, iz, Math.PI/2*0.8, 0, 0);
+    // 艦載機
+    const np = 6 + Math.floor(rng()*8);
+    for (let i=0;i<np;i++){ const x = L*0.4 - i*L*0.07 + rng()*3, z = (rng()-0.5)*W*0.9 + W*0.1, s = W*0.12, y = H*1.18, yaw = (rng()-0.5)*0.6 + (rng()<0.15 ? 1.2 : 0);
+      const c = Math.cos(yaw), sn = Math.sin(yaw), R = (a,b) => P3(x + a*c - b*sn, y, z + a*sn + b*c);
+      k.hull('body', [R(s, 0), R(-s, s*0.9), R(-s, -s*0.9), P3(x, y + s*0.25, z)]);
+      k.box('body', s*1.6, s*0.2, s*0.25, x, y + s*0.1, z, 0, -yaw, 0); }
+    k.box('body', 1.2, 2.4, 1.2, ix, H*3.85, iz);
+  } else {
+    // 甲板
+    k.box('body', L*0.9, H*0.08, W*0.95, -L*0.04, H*1.03, 0);
+    // 多層艦橋
+    const bx = -L*0.05;
+    k.box('body', L*0.2, H*0.5, W*0.62, bx, H*1.3, 0);
+    k.box('body', L*0.15, H*0.45, W*0.5, bx + L*0.01, H*1.75, 0);
+    k.box('body', L*0.1, H*0.4, W*0.4, bx + L*0.02, H*2.17, 0);
+    k.box('dark', L*0.101, H*0.09, W*0.402, bx + L*0.02, H*2.25, 0);
+    k.box('body', L*0.06, H*0.3, W*0.3, bx + L*0.03, H*2.5, 0);
+    // 桅杆、橫桁、雷達
+    k.box('body', 1.4, H*2.2, 1.4, bx + L*0.02, H*3.6, 0);
+    k.box('body', 0.6, 0.6, W*0.6, bx + L*0.02, H*3.9, 0);
+    k.box('body', 0.6, 0.6, W*0.4, bx + L*0.02, H*4.3, 0);
+    k.cyl('body', W*0.14, W*0.14, 0.6, bx + L*0.035, H*3.2, 0, 0, 0, Math.PI/2*0.85);
+    k.box('body', 0.8, 2.4, 0.8, bx + L*0.02, H*4.75, 0);
+    // 煙囪
+    for (let i=0;i<1+Math.floor(rng()*2);i++){ const fx = bx - L*0.13 - i*L*0.07;
+      k.box('body', L*0.05, H*1.1, W*0.28, fx, H*1.6, 0, 0, 0, 0.08); k.box('dark', L*0.045, H*0.06, W*0.25, fx - H*0.08, H*2.17, 0, 0, 0, 0.08); }
+    // 主砲塔：前二後一或後二
+    const tur = [L*0.3, L*0.18, -L*0.3].concat(rng() < 0.5 ? [-L*0.4] : []);
+    tur.forEach((tx, i) => { const back = tx < 0, y = H*1.15 + (i===1 ? H*0.18 : 0);
+      if (i===1) k.cyl('body', W*0.2, W*0.22, H*0.2, tx, H*1.12, 0);
+      k.cyl('body', W*0.2, W*0.22, H*0.12, tx, y, 0);
+      k.box('body', W*0.38, H*0.2, W*0.3, tx, y + H*0.14, 0);
+      for (const bz of [-0.08, 0, 0.08]) k.box('body', L*0.11, 0.9, 0.9, tx + (back ? -1 : 1)*L*0.07, y + H*0.16, bz*W, 0, 0, (back ? -1 : 1)*0.05); });
+    // 副砲與救生艇
+    for (const sd of [-1,1]){ for (let i=0;i<4;i++){ const x = bx - L*0.1 + i*L*0.07; k.box('body', W*0.12, H*0.12, W*0.1, x, H*1.13, sd*W*0.38); k.box('body', L*0.04, 0.5, 0.5, x + L*0.02, H*1.17, sd*W*0.42); }
+      for (let i=0;i<3;i++) k.box('body', L*0.035, H*0.08, W*0.08, bx - L*0.05 + i*L*0.045, H*1.6, sd*W*0.34); }
+  }
+  k.build(grp);
+  return { grp, L, H };
+}
+const towerMat = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.5,0.5,0.5), flatShading:true }), false, true);
+const fallers = [];   // 會崩塌倒進海裡的大樓
+
+const chunks = new Map();
+let colliders = [];
+
+// 區段：每 320 公尺依種子換一種狀態（廢墟多寡、會不會下雨、霧有多濃）
+const REGION = 320;
+function region(x){ const i = Math.floor(x/REGION), r = mulberry(SEED*31 + i*7919 + 11);
+  return { i, towers: 0.3 + r()*1.4, sea: 0.25 + r()*0.6, rain: r() < 0.3 ? 1 : 0, fog: r(), ships: 0.4 + r()*1.6 }; }
+// 電線桿線路：兩條平行海岸、一近一遠；每公里決定有沒有，有就出現一段
+const wireMat = new THREE.LineBasicMaterial({ color: new THREE.Color(0.02,0.02,0.02) });
+const POLE_LINES = [ { id:1, gap:26, off:34, amp:6, p:0.55 }, { id:2, gap:30, off:78, amp:10, p:0.3 } ];   // 每公里的出現機率
+const WIRE_PTS = [[0, -0.3, -1.15], [0, -0.3, -0.4], [0, -0.3, 0.4], [0, -0.3, 1.15], [0, -1.3, -0.85], [0, -1.3, 0.85]];
+const _e = new THREE.Euler(), _pp = new THREE.Vector3();
+function poleAt(L, k){
+  const x = k*L.gap + (hash2(k*3 + L.id, 17) - 0.5)*5;
+  // 每 1 公里決定一次有沒有電線桿；有的話，這一公里裡只立 1 根
+  const ki = Math.floor(k*L.gap/1000), rr = mulberry(SEED*53 + ki*613 + L.id*97);
+  if (rr() > L.p) return null;
+  rr(); const n = 1, k0 = Math.ceil((ki*1000 + rr()*(1000 - L.gap*4))/L.gap);
+  if (k < k0 || k >= k0 + n) return null;
+  const h1 = hash2(k*7 + SEED, L.id), h2 = hash2(k*13 + L.id, SEED + 5), h3 = hash2(k*29, L.id + SEED*3);
+  return { x, z: shoreZ(x) + L.off + L.amp*Math.sin(k*0.27 + L.id), y: -1.2 - h3*1.5, h: 11 + h1*4,
+           tx: (h2 - 0.5)*0.32, tz: (h1 - 0.5)*0.22, tr: h3 < 0.22 };
+}
+function polePoint(P, w){
+  const q = WIRE_PTS[w]; _pp.set(q[0], P.h + q[1], q[2]).applyEuler(_e.set(P.tx, 0, P.tz));
+  return new THREE.Vector3(P.x + _pp.x, P.y + _pp.y, P.z + _pp.z);
+}
+function buildChunk(ci){
+  const g = new THREE.Group(), x0 = ci*CH, rng = mulberry(ci*9973 + 17 + SEED*131), cols = [], towers = [], R = region(ci*CH + CH/2);
+  // 地面：格點用全域座標抖動，兩段交界完全吻合
+  const NX = CH/2, Z0 = -110, Z1 = 170, NZ = (Z1-Z0)/2;
+  const pos = [];
+  const vtx = (ix, iz) => {
+    const gx = ci*NX + ix, gz = iz;
+    const jx = (ix===0||ix===NX) ? 0 : (hash2(gx, gz*7+3)-0.5)*1.1;
+    const jz = (hash2(gx*5+1, gz)-0.5)*1.1;
+    const x = x0 + ix*2 + jx, z = Z0 + iz*2 + jz;
+    return [x, height(x,z), z];
+  };
+  const grid = [];
+  for (let iz=0; iz<=NZ; iz++){ const row=[]; for (let ix=0; ix<=NX; ix++) row.push(vtx(ix,iz)); grid.push(row); }
+  for (let iz=0; iz<NZ; iz++) for (let ix=0; ix<NX; ix++){
+    const a=grid[iz][ix], b=grid[iz][ix+1], c=grid[iz+1][ix], d=grid[iz+1][ix+1];
+    if ((ix+iz)&1) pos.push(...a,...c,...b, ...b,...c,...d); else pos.push(...a,...c,...d, ...a,...d,...b);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  const ground = new THREE.Mesh(geo, sandMat); ground.receiveShadow = true; ground.castShadow = true;
+  g.add(ground);
+
+  const add = (geo, mat, x, y, z, ry, shadow=true) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); m.rotation.y = ry;
+    m.castShadow = shadow; m.receiveShadow = true; g.add(m); return m;
+  };
+  // 沙灘上的石塊：成群出現，只放在散步路線（潮線往內 13 公尺）以外
+  const nb = 7 + Math.floor(rng()*6);
+  for (let i=0;i<nb;i++){
+    const x0b = x0 + rng()*CH, zc = cliffZ(x0b)+3, zs = shoreZ(x0b)-15, z0b = zc + rng()*Math.max(0, zs-zc);
+    const nc = 1 + Math.floor(rng()*3);
+    for (let j=0;j<nc;j++){
+      const s = (j ? 0.4 : 0.7) + rng()*rng()*(j ? 1.4 : 2.8), x = x0b + (j ? (rng()-0.5)*6 : 0);
+      const z = Math.min(shoreZ(x)-15, z0b + (j ? (rng()-0.5)*5 : 0));
+      add(rockGeo(rng, s*(1+rng()), s*0.7, s*(0.8+rng()*0.6)), rockMat, x, height(x,z) - s*0.15, z, rng()*6.28);
+      cols.push({ x, z, r: s*1.5 });
+    }
+  }
+  // 崖腳的落石帶：沿著岸壁一路堆著
+  for (let x = x0 + rng()*3; x < x0 + CH; x += 2.5 + rng()*4){
+    const z = cliffZ(x) - 1.5 + rng()*3.5, s = 0.8 + rng()*2.2;
+    add(rockGeo(rng, s*(1+rng()*0.8), s*(0.6+rng()*0.5), s*(0.8+rng()*0.5)), rng() < 0.5 ? cliffMat : rockMat, x, height(x,z) - s*0.2, z, rng()*6.28);
+    cols.push({ x, z, r: s*1.4 });
+  }
+  // 外海的長條石：海裡盡量不長石頭，只偶爾出現一條低矮的
+  if (rng() < 0.15){
+    const x = x0 + 6 + rng()*(CH-12), z = shoreZ(x) + 24 + rng()*10, len = 6 + rng()*8, ry = (rng()-0.5)*0.5;
+    add(rockGeo(rng, len/2, 0.75 + rng()*0.4, 1.1 + rng()*0.5), rockMat, x, 0.1, z, ry);
+    for (let t=-1; t<=1; t+=0.5) cols.push({ x: x + Math.cos(ry)*t*len/2, z: z - Math.sin(ry)*t*len/2, r: 1.6 });
+  }
+  // 崖邊岩台：一層層往內陸疊上去
+  const np = 4 + Math.floor(rng()*4);
+  for (let i=0;i<np;i++){
+    const x = x0 + (i + rng())*CH/np, z = cliffZ(x) - 2 - rng()*14;
+    const w = 4 + rng()*9, h = 1.2 + rng()*2.6, d = 2.5 + rng()*4.5;
+    add(rockGeo(rng, w, h, d), cliffMat, x, height(x,z) + h*0.4, z, (rng()-0.5)*0.6);
+    if (rng() < 0.5){ const z2 = z - d - rng()*4, h2 = h*(1.2 + rng());
+      add(rockGeo(rng, w*0.8, h2, d), cliffMat, x + (rng()-0.5)*4, height(x,z2) + h2*0.4, z2, (rng()-0.5)*0.6); }
+  }
+  const tower = (x, y, z, w, d, floors, ry, tx, tz) => {
+    const pivot = new THREE.Group(); pivot.position.set(x, y, z); pivot.rotation.set(tx, ry, tz);
+    const m = new THREE.Mesh(towerGeo(rng, w, d, floors), towerMat); m.castShadow = true; m.receiveShadow = true;
+    pivot.add(m); towers.push(m);
+    g.add(pivot); return pivot;
+  };
+  // 崖邊樓群：像海蝕崖一樣沿岸排開，有的傾斜、底部埋進岩台
+  const nt = Math.round((0.5 + rng()*1.6) * R.towers);   // 沿岸樓群稀疏一些，段落之間留出空地
+  for (let i=0;i<nt;i++){
+    const x = x0 + (i + rng()*0.8)*CH/nt, z = cliffZ(x) - 7 - rng()*24;
+    tower(x, height(x,z) - 2 - rng()*6, z, 14 + rng()*16, 10 + rng()*12, 12 + Math.floor(rng()*30), (rng()-0.5)*0.4, (rng()-0.5)*0.12, (rng()-0.5)*0.14);
+  }
+  // 地平線上更遠的巨樓剪影
+  if (rng() < 0.3){ const x = x0 + rng()*CH, z = -125 - rng()*60; tower(x, -6, z, 26 + rng()*24, 18 + rng()*16, 45 + Math.floor(rng()*45), rng(), 0, (rng()-0.5)*0.1); }
+  // 半沉在海裡、往外傾倒的大樓
+  if (rng() < R.sea*0.3){   // 視野拉長又沒有近霧，海裡的大樓要壓低機率，不然一眼看去會一整排
+    const x = x0 + rng()*CH, z = shoreZ(x) + 30 + rng()*80, floors = 9 + Math.floor(rng()*16);
+    const p = tower(x, -6 - rng()*10, z, 24 + rng()*18, 18 + rng()*14, floors + 6, (rng()-0.5)*0.8, 0.12 + rng()*0.3, (rng()-0.5)*0.3);   // 海中大樓量體加粗
+    fallers.push({ p, t0: -1, dir: rng() < 0.5 ? -1 : 1, H: (floors + 6)*3.4, big: false });
+  }
+  // 擱淺船艦已取消（使用者覺得太突兀）；alienShip／humanShip 保留不用
+  // 海裡一排排傾斜的電線桿（參考新世紀福音戰士海報）：桿位用全域編號決定，跨段也接得起來
+  for (const L of POLE_LINES){
+    for (let k = Math.ceil(x0/L.gap); k*L.gap < x0 + CH; k++){
+      const P = poleAt(L, k); if (!P) continue;
+      const pg = new THREE.Group(); pg.position.set(P.x, P.y, P.z); pg.rotation.set(P.tx, 0, P.tz);
+      const parts = [];
+      const bx = (sx, sy, sz, x, y, z) => { const b = new THREE.BoxGeometry(sx, sy, sz); b.translate(x, y, z); parts.push(b); };
+      const pole = new THREE.CylinderGeometry(0.13, 0.2, P.h, 6); pole.translate(0, P.h/2, 0); parts.push(pole);
+      bx(0.14, 0.14, 2.6, 0, P.h - 0.6, 0); bx(0.14, 0.14, 2.0, 0, P.h - 1.6, 0);   // 兩支橫擔
+      for (const zz of [-1.15, -0.4, 0.4, 1.15]) bx(0.1, 0.25, 0.1, 0, P.h - 0.42, zz);   // 礙子
+      for (const zz of [-0.85, 0.85]) bx(0.1, 0.25, 0.1, 0, P.h - 1.42, zz);
+      bx(0.06, 1.6, 0.06, 0, P.h - 1.1, 1.0);   // 斜撐
+      if (P.tr){ const c = new THREE.CylinderGeometry(0.42, 0.42, 1.2, 8); c.translate(0.45, P.h - 3.2, 0); parts.push(c); bx(0.5, 0.12, 1.1, 0.3, P.h - 2.5, 0); }
+      const m = new THREE.Mesh(mergeAll(parts), darkMat); m.castShadow = true; pg.add(m); g.add(pg);
+      // 電線：接到下一根；下一根倒掉時，電線垂進海裡
+      const N = poleAt(L, k + 1), wires = [];
+      for (let w = 0; w < WIRE_PTS.length; w++){
+        const a = polePoint(P, w);
+        const b = N ? polePoint(N, w) : new THREE.Vector3(a.x + L.gap*0.7, -0.5, a.z + (hash2(k, w) - 0.5)*3);
+        const sag = N ? 0.7 + 0.25*w : 0;
+        for (let i=0;i<10;i++){ const t0 = i/10, t1 = (i+1)/10;
+          const p0 = a.clone().lerp(b, t0), p1 = a.clone().lerp(b, t1);
+          if (N){ p0.y -= sag*4*t0*(1-t0); p1.y -= sag*4*t1*(1-t1); }
+          else { p0.y = a.y + (b.y - a.y)*Math.pow(t0, 0.6); p1.y = a.y + (b.y - a.y)*Math.pow(t1, 0.6); }
+          wires.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z); }
+      }
+      const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
+      g.add(new THREE.LineSegments(wg, wireMat));
+    }
+  }
+  scene.add(g);
+  return { g, cols, towers };
+}
+// 遠景地形：近處細節段落以外、以及海岸後方，用粗網格一路鋪到地平線，避免沒有霧之後看到世界的邊緣
+const FAR_Z0 = -560, FAR_STEP = 8;
+function farH(x, z){
+  let y = height(x, z);
+  const k = -110 - z;   // 建築後方：一層層往內陸升起的丘陵與山脊
+  // 崖頂之後是平坦的高地（只有很緩的起伏），山脊放到 300 公尺外、讓遠方的霧吃掉，不會在走路途中突然冒出一座山
+  if (k > 0) y += 2.5*vn(x*0.02, z*0.02)*Math.min(k/20, 1) + Math.max(0, k - 220)*0.18*(0.5 + vn(x*0.008 + 40, z*0.008));
+  return y - (z > -110 ? 0.45 : 0);   // 和細節地形重疊處稍微壓低，避免交錯閃爍
+}
+const farChunks = new Map();
+function buildFar(ci){
+  const g = new THREE.Group(), x0 = ci*CH, NX = CH/FAR_STEP, NZ = Math.round((170 - FAR_Z0)/FAR_STEP);
+  const back = [], front = [];
+  const v = (ix, iz) => { const x = x0 + ix*FAR_STEP, z = FAR_Z0 + iz*FAR_STEP; return [x, farH(x, z), z]; };
+  for (let iz=0; iz<NZ; iz++) for (let ix=0; ix<NX; ix++){
+    const a=v(ix,iz), b=v(ix+1,iz), c=v(ix,iz+1), d=v(ix+1,iz+1), arr = FAR_Z0 + iz*FAR_STEP < -70 ? back : front;
+    arr.push(...a,...c,...d, ...a,...d,...b);
+  }
+  for (const [arr, mat] of [[back, cliffMat], [front, sandMat]]){
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; g.add(m); }
+  // 遠方山脊上零星的巨樓剪影
+  const rng = mulberry(ci*7717 + 5 + SEED*97);
+  for (let i=0;i<2;i++) if (rng() < 0.6){ const x = x0 + rng()*CH, z = -200 - rng()*300, w = 20 + rng()*30, h = 60 + rng()*140;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w*(0.6 + rng()*0.6)), towerMat); m.position.set(x, farH(x, z) + h*0.4, z); m.rotation.set(0, rng()*3, (rng()-0.5)*0.15); g.add(m); }
+  scene.add(g); return g;
+}
+function updateFar(cx){
+  const a = Math.floor((cx - 760)/CH), b = Math.floor((cx + 760)/CH);
+  for (let i=a;i<=b;i++) if (!farChunks.has(i)) farChunks.set(i, buildFar(i));
+  for (const [i,g] of farChunks) if (i < a-1 || i > b+1){ scene.remove(g); g.traverse(o => o.geometry && o.geometry.dispose()); farChunks.delete(i); }
+}
+// 鏡頭和角色之間被大樓擋住時，那棟大樓變半透明
+const ghostMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(0.5,0.5,0.5), flatShading:true, transparent:true, opacity:0.22, depthWrite:false, fog:false });
+const _ray = new THREE.Ray(), _bx = new THREE.Box3(), _hit = new THREE.Vector3(), _hp = new THREE.Vector3();
+function ghostTowers(){
+  _hp.set(st.x, hero.position.y + 1.1, st.z);
+  _ray.origin.copy(camera.position); _ray.direction.subVectors(_hp, camera.position);
+  const dist = _ray.direction.length(); _ray.direction.divideScalar(dist);
+  for (const c of chunks.values()) for (const m of c.towers){
+    _bx.setFromObject(m);
+    const hit = !_bx.containsPoint(_hp) && _ray.intersectBox(_bx, _hit) && _hit.distanceTo(camera.position) < dist;
+    const want = hit ? ghostMat : towerMat;
+    if (m.material !== want){ m.material = want; m.castShadow = !hit; }
+  }
+}
+function updateChunks(cx){
+  updateFar(cx);
+  const a = Math.floor((cx - 210)/CH), b = Math.floor((cx + 800)/CH);   // 前方約 920 公尺內的地形與建築都先蓋好，避免走著走著突然冒出來
+  for (let i=a;i<=b;i++) if (!chunks.has(i)) chunks.set(i, buildChunk(i));
+  for (const [i,c] of chunks) if (i < a-1 || i > b+1){
+    scene.remove(c.g); c.g.traverse(o => o.geometry && o.geometry.dispose()); chunks.delete(i);
+    for (let k=fallers.length-1;k>=0;k--) if (!fallers[k].p.parent || fallers[k].p.parent === c.g) fallers.splice(k,1);
+  }
+  colliders = []; for (const c of chunks.values()) colliders.push(...c.cols);
+}
+
+/* ---------- 大樓倒進海裡的水花 ---------- */
+const SPL_MAX = 1600, splGeo = new THREE.BoxGeometry(1, 1, 1);
+const spl = new THREE.InstancedMesh(splGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, fog:false }), SPL_MAX);
+spl.frustumCulled = false; scene.add(spl);
+const SP_ = Array.from({ length: SPL_MAX }, () => ({ x:0, y:-99, z:0, vx:0, vy:0, vz:0, life:0, s:1 })); let splI = 0;
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _sv = new THREE.Vector3(), _pv = new THREE.Vector3();
+function spray(x, z, n, power, spread){
+  for (let i=0;i<n;i++){ const q = SP_[splI]; splI = (splI + 1) % SPL_MAX; const a = Math.random()*6.28, rr = Math.random()*spread;
+    q.x = x + Math.cos(a)*rr; q.z = z + Math.sin(a)*rr; q.y = 0.2;
+    q.vx = Math.cos(a)*power*0.35*Math.random(); q.vz = Math.sin(a)*power*0.35*Math.random(); q.vy = power*(0.45 + Math.random()*0.8);
+    q.life = 1; q.s = 0.1 + Math.random()*(0.12 + power*0.012); }   // 細碎的小水珠
+}
+function updateSplash(dt){
+  for (let i=0;i<SPL_MAX;i++){ const q = SP_[i];
+    if (q.life > 0){ q.vy -= 7*dt; q.x += q.vx*dt; q.y += q.vy*dt; q.z += q.vz*dt; q.life -= dt*0.25; if (q.y < 0 && q.vy < 0) q.life = 0; }
+    const sc = q.life > 0 ? q.s*Math.min(1, q.life*3) : 0;
+    _m4.compose(_pv.set(q.x, q.life > 0 ? q.y : -99, q.z), _q, _sv.setScalar(Math.max(sc, 1e-4))); spl.setMatrixAt(i, _m4); }
+  spl.instanceMatrix.needsUpdate = true;
+}
+
+/* ---------- 天空（遠景要看得到海平線） ---------- */
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1500, 24, 12), new THREE.ShaderMaterial({
+  uniforms:{ uTime:U.uTime, uSP:U.uSP, uSQ:U.uSQ, fogColor:{ value: scene.fog.color }, uFlash:{ value:0 }, uFlashA:{ value:0 } }, side:THREE.BackSide, depthWrite:false, fog:false,
+  vertexShader:`varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: GLSL.replace('varying vec3 vWPos;','') + `
+    uniform vec3 fogColor; uniform float uFlash, uFlashA; varying vec3 vDir;
+    void main(){
+      float h = max(vDir.y, 0.0);
+      vec2 p = vDir.xz/(h+0.12)*1.6 + vec2(uTime*0.01, 0.0);
+      float cl = vnoise(p)*0.6 + vnoise(p*2.7)*0.4;
+      float c = mix(1.0, 0.6, smoothstep(0.0, 0.5, h)) - 0.22*smoothstep(0.45, 0.8, cl)*smoothstep(0.02, 0.2, h);   // 壓低的雲層
+      // 閃光只在地平線上一小段：貼著海平線、只亮某個方位
+      float da = abs(mod(atan(vDir.z, vDir.x) - uFlashA + 3.14159, 6.28318) - 3.14159);
+      c += uFlash * 1.8 * exp(-h*14.0) * exp(-da*da*6.0) * (0.7 + 0.3*vnoise(vec2(atan(vDir.z, vDir.x)*30.0, uTime*20.0)));
+      gl_FragColor = vec4(fogColor*c*1.04, 1.);
+    }`
+}));
+sky.renderOrder = -1;
+scene.add(sky);
+
+/* ---------- 海 ---------- */
+const water = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1300, 1, 1).rotateX(-Math.PI/2), new THREE.ShaderMaterial({
+  uniforms:{ uTime:U.uTime, uSP:U.uSP, uSQ:U.uSQ, fogColor:{ value: scene.fog.color }, fogNear:{ value:1e5 }, fogFar:{ value:2e5 } },
+  vertexShader:`varying vec3 vWPos; varying float vDepth;
+    void main(){ vec4 w = modelMatrix*vec4(position,1.); vWPos=w.xyz; vec4 mv = viewMatrix*w; vDepth=-mv.z; gl_Position=projectionMatrix*mv; }`,
+  fragmentShader: GLSL + `
+    uniform vec3 fogColor; uniform float fogNear, fogFar; varying float vDepth;
+    void main(){
+      float x = vWPos.x, z = vWPos.z, t = uTime;
+      float d = z - frontZ(x, t);
+      float edge = (vnoise(vec2(x*0.8, t*0.6))-0.5)*1.4 + (vnoise(vec2(x*1.7, z*0.9 - t*0.8))-0.5)*1.0;
+      if (d < edge) discard;
+      float dd = d - edge;
+      float band = 1.0 - smoothstep(0.0, 3.0, dd);
+      float f1 = vnoise(vec2(x*0.9 + t*0.1, z*2.2 - t*0.9));
+      float foam = step(0.62, band*(0.55 + 0.9*f1));
+      float lines = vnoise(vec2(x*0.33 + t*0.05, z*1.25 + t*0.55)) * vnoise(vec2(x*0.9, z*0.6 - t*0.3));
+      foam = max(foam, step(0.56, lines) * smoothstep(2.0, 5.0, dd) * (1.0 - smoothstep(8.0, 18.0, dd)));
+      float base = mix(0.2, 0.13, smoothstep(0.0, 25.0, dd)) + 0.05*vnoise(vec2(x*0.2, z*0.4 + t*0.2));
+      base = mix(base, 0.3, smoothstep(15.0, 160.0, vDepth) * smoothstep(3.0, 12.0, dd));   // 遠處海面反映天光
+      float c = mix(base * cloudShade(vWPos), 1.0, foam);
+      vec3 col = mix(vec3(c), fogColor, smoothstep(fogNear, fogFar, vDepth));
+      gl_FragColor = vec4(col, 1.);
+    }`
+}));
+water.position.set(0, 0.04, 630);
+scene.add(water);
+
+/* ---------- 角色 ---------- */
+const hero = new THREE.Group();
+const box = (w,h,d,x,y,z,parent=hero) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), inkMat); m.position.set(x,y,z); m.castShadow = true; parent.add(m); return m; };
+// 依使用者給的角色圖：深色厚外套、窄肩上一顆小兜帽頭、細腿、淺黃綠的手；整體細長，身高約 2.1 公尺
+const handMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.1, 0), fog:false });
+box(0.26, 0.92, 0.38, 0, 1.38, 0);          // 外套
+box(0.22, 0.12, 0.3, 0, 1.88, 0);           // 圓肩
+box(0.17, 0.24, 0.16, 0.02, 2.04, 0);       // 頭（兜帽）
+box(0.11, 0.08, 0.1, 0.0, 2.19, 0);         // 兜帽頂
+// 腿分大腿、小腿、腳掌三節：髖關節擺動，膝蓋在擺盪期彎起來，腳掌朝前
+const legs = [-0.07, 0.07].map(o => { const p = new THREE.Group(); p.position.set(0, 0.95, o); hero.add(p); box(0.11, 0.48, 0.1, 0, -0.24, 0, p);
+  const knee = new THREE.Group(); knee.position.set(0, -0.48, 0); p.add(knee); box(0.09, 0.44, 0.085, 0, -0.22, 0, knee);
+  const ankle = new THREE.Group(); ankle.position.set(0, -0.44, 0); knee.add(ankle); box(0.17, 0.04, 0.085, 0.045, -0.02, 0, ankle);
+  p.userData = { knee, ankle }; return p; });
+const arms = [-0.22, 0.22].map(o => { const p = new THREE.Group(); p.position.set(0, 1.8, o); hero.add(p); box(0.09, 0.66, 0.09, 0, -0.33, 0, p);
+  const h = box(0.1, 0.13, 0.09, 0, -0.72, 0, p); h.material = handMat; return p; });
+// 踩水時腳邊的水花
+const splash = [];
+const splashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: true });
+for (let i=0;i<10;i++){ const m = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.07,0.07), splashMat); m.visible = false; scene.add(m); splash.push(m); }
+scene.add(hero);
+// 腳下微光（參考夜景影片裡角色的光暈）
+const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 4.5).rotateX(-Math.PI/2), new THREE.ShaderMaterial({
+  uniforms:{ k:{ value:0.12 } }, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader:`uniform float k; varying vec2 vUv; void main(){ float r=length(vUv-.5)*2.; float a=pow(max(1.-r,0.),2.)*k; gl_FragColor=vec4(vec3(a),1.); }`
+}));
+scene.add(glow);
+
+/* ---------- 腳印 ---------- */
+const FP_MAX = 360;
+const fpMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.18, 0.32).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.03,0.03,0.03), fog:true, transparent:true, opacity:0.85, depthWrite:false }), FP_MAX);
+fpMesh.frustumCulled = false;
+const fps = []; let fpHead = 0;
+const M0 = new THREE.Matrix4().makeScale(0,0,0), MT = new THREE.Matrix4(), Q = new THREE.Quaternion(), V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), S1 = new THREE.Vector3(1,1,1);
+for (let i=0;i<FP_MAX;i++){ fpMesh.setMatrixAt(i, M0); fps.push(null); }
+scene.add(fpMesh);
+function addFootprint(x, z, yaw){
+  if (z > front(x, U.uTime.value)) return;           // 踩在水裡不留
+  V1.set(x, height(x,z) + 0.03, z); Q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+  fpMesh.setMatrixAt(fpHead, MT.compose(V1, Q, S1));
+  fps[fpHead] = { x, z, born: U.uTime.value };
+  fpHead = (fpHead+1) % FP_MAX; fpMesh.instanceMatrix.needsUpdate = true;
+}
+function updateFootprints(t){
+  let dirty = false;
+  for (let i=0;i<FP_MAX;i++){ const f = fps[i]; if (!f) continue;
+    if (f.z > front(f.x, t) - 0.2 || t - f.born > 150){ fps[i] = null; fpMesh.setMatrixAt(i, M0); dirty = true; } }
+  if (dirty) fpMesh.instanceMatrix.needsUpdate = true;
+}
+
+/* ---------- 雨 ---------- */
+const ASH_N = 1100, ashPos = new Float32Array(ASH_N*6), ashSeed = [];
+const ashGeo = new THREE.BufferGeometry(); ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPos, 3));
+const ash = new THREE.LineSegments(ashGeo, new THREE.LineBasicMaterial({ color: new THREE.Color(0.01,0.01,0.01), fog:true, transparent:true, opacity:0 }));
+ash.frustumCulled = false; ash.visible = false; scene.add(ash);
+for (let i=0;i<ASH_N;i++) ashSeed.push({ x:(Math.random()-0.5)*50, y:Math.random()*16, z:(Math.random()-0.5)*50, v:0.5+Math.random()*0.6, p:Math.random()*6.28 });
+const RAIN_N = 700;
+const rainPos = new Float32Array(RAIN_N*6), rainSeed = [];
+const rainGeo = new THREE.BufferGeometry(); rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color:0xffffff, fog:true, transparent:true, opacity:0.0 }));
+rain.frustumCulled = false; scene.add(rain);
+for (let i=0;i<RAIN_N;i++) rainSeed.push({ x:(Math.random()-0.5)*40, y:0, z:(Math.random()-0.5)*40, v:3.2+Math.random()*1.6, on:false });
+
+/* ---------- 輸入 ---------- */
+const keys = new Set();
+const st = { x: 0, z: 1, yaw: 0, auto: true, run: false, phase: 0, lastStep: 0, dist: 0, maxX: 0, rain: 0, rainTarget: 0, muted: false, started: false, pal: 0, moveFwd: 0, fogK: 0, fogT: 0, regionI: null };
+st.z = shoreZ(0) - 3.5;
+const pointer = { down:false, x:0, y:0 };
+const ray = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0), hit = new THREE.Vector3();
+addEventListener('keydown', e => {
+  if (!st.started) return;
+  const k = e.key.toLowerCase();
+  if (k === 'm') { st.muted = !st.muted; if (audio) audio.master.gain.value = st.muted ? 0 : 0.9; renderKeys(); return; }
+  if (k === 'r') { st.rainTarget = st.rainTarget ? 0 : 1; renderKeys(); return; }
+  if (k === 'p') { setPalette((st.pal + 1) % PALS.length); return; }   // 換色盤（使用者要求加回來看看）
+  if (k === 'n') { applySeed(Math.floor(Math.random()*1e5)); return; }
+  if (k === 'o' || k === '0') { cam.orbitT = 0; cam.zoomT = 1; return; }   // O 或 0 都能回正
+  if (['arrowup','arrowdown','arrowleft','arrowright','a','d','w','s'].includes(k)) { keys.add(k); e.preventDefault(); }
+});
+addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); });
+// 鏡頭控制：拖曳繞著人物轉（只在身後半圈）、上下拖或滾輪縮放、雙擊回正
+const drag = new Map();
+canvas.addEventListener('pointerdown', e => { if (!st.started) return; drag.set(e.pointerId, { x:e.clientX, y:e.clientY }); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  const d = drag.get(e.pointerId); if (!d) return;
+  const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
+  if (drag.size === 1){ cam.orbitT -= dx*0.006; cam.lastIn = performance.now(); }   // 只能繞轉，距離固定
+  clampCam();
+});
+const up = e => { drag.delete(e.pointerId); };
+canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('dblclick', () => { cam.orbitT = 0; cam.zoomT = 1; });
+function clampCam(){ cam.orbitT = THREE.MathUtils.clamp(cam.orbitT, -1.3, 1.3); cam.zoomT = 1; }
+
+function setPalette(i){
+  st.pal = i; const P = PALS[i];
+  post.uniforms.pal.value = P.pal.map(toVec);
+  post.uniforms.accent.value = toVec(P.accent);
+  post.uniforms.glowC.value = toVec(P.glow);
+    renderKeys();
+}
+/* ---------- 光線呼嘯（使用者已取消觸發入口，程式保留不用） ---------- */
+const STREAK_T = 1.6, BOOM_AT = 5.7, TRAIL_N = 60;   // 光線 1.6 秒劃過；轟鳴維持在發射後 5.7 秒
+const streakMesh = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 0.3, 90, 6).rotateX(Math.PI/2), new THREE.MeshBasicMaterial({ color: 0xffffff, fog:false }));
+streakMesh.visible = false; streakMesh.frustumCulled = false; scene.add(streakMesh);
+const trailPos = new Float32Array(TRAIL_N*6), trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
+const trail = new THREE.LineSegments(trailGeo, new THREE.LineBasicMaterial({ color: 0xffffff, fog:false }));
+trail.visible = false; trail.frustumCulled = false; scene.add(trail);
+function launchStreak(){
+  if (!st.started) return;
+  // 望遠鏡頭視野窄：光線放在前方 650～1150 公尺，從畫面左上（陸地上空）斜斜劃到右邊的海平線下
+  const fx = Math.cos(camYaw), fz = -Math.sin(camYaw), rx = -fz, rz = fx, d0 = 620 + Math.random()*80, d1 = d0 + 450, side = Math.random()*120;
+  st.streak = { t0: U.uTime.value,
+    a: new THREE.Vector3(st.x + fx*d0 - rx*(300 - side), 170 + Math.random()*40, st.z + fz*d0 - rz*(300 - side)),
+    b: new THREE.Vector3(st.x + fx*d1 + rx*(560 + side), -25, st.z + fz*d1 + rz*(560 + side)), pts: [], boom: false, hit: -1 };
+  // 光線本身無聲，只在越過海平線後傳來轟鳴
+}
+function boom(){
+  if (!audio) return;
+  const ac = audio.ac, at = ac.currentTime, g = audio.rumG.gain;
+  g.cancelScheduledValues(at); g.setValueAtTime(0, at); g.linearRampToValueAtTime(1.6, at + 0.25); g.linearRampToValueAtTime(0.7, at + 4); g.linearRampToValueAtTime(0, at + 14);
+  // 低頻重擊：40Hz 往下掉的正弦，加上一段破裂的低通噪音
+  const o = ac.createOscillator(), og = ac.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(70, at); o.frequency.exponentialRampToValueAtTime(24, at + 3);
+  og.gain.setValueAtTime(0, at); og.gain.linearRampToValueAtTime(0.9, at + 0.05); og.gain.exponentialRampToValueAtTime(0.001, at + 6);
+  o.connect(og); og.connect(audio.master); o.start(at); o.stop(at + 6.2);
+  const n = ac.createBufferSource(), nf = ac.createBiquadFilter(), ng = ac.createGain(); n.buffer = audio.white; nf.type = 'lowpass'; nf.frequency.value = 400;
+  ng.gain.setValueAtTime(0.6, at); ng.gain.exponentialRampToValueAtTime(0.001, at + 2.5);
+  n.connect(nf); nf.connect(ng); ng.connect(audio.master); n.start(at); n.stop(at + 2.6);
+}
+const keysEl = document.getElementById('keys');
+function renderKeys(){
+  keysEl.innerHTML =
+    `<b>DRAG</b><i>orbit</i><b>O</b><i>reset view</i><b>N</b><i>new shore</i>` +
+    `<b>R</b><i class="${st.rainTarget?'':'off'}">rain ${st.rainTarget?'on':'off'}</i>` +
+    `<b>M</b><i class="${st.muted?'off':''}">sound ${st.muted?'off':'on'}</i>` +
+    `<b>P</b><i>palette · ${PALS[st.pal].en.toLowerCase()}</i>`;
+}
+
+/* ---------- 聲音：程序化海浪、風、雨 ---------- */
+let audio = null;
+function startAudio(){
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const len = ac.sampleRate*4, brown = ac.createBuffer(1, len, ac.sampleRate), white = ac.createBuffer(1, len, ac.sampleRate);
+    const bd = brown.getChannelData(0), wd = white.getChannelData(0); let last = 0;
+    for (let i=0;i<len;i++){ const w = Math.random()*2-1; wd[i] = w; last = (last + 0.02*w)/1.02; bd[i] = last*3.5; }
+    const master = ac.createGain(); master.gain.value = 0.9; master.connect(ac.destination);
+    const loop = (buf, off) => { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.start(0, off); return s; };
+    const surfF = ac.createBiquadFilter(); surfF.type = 'lowpass'; surfF.frequency.value = 500;
+    const surfG = ac.createGain(); surfG.gain.value = 0;
+    loop(brown, 0).connect(surfF); surfF.connect(surfG); surfG.connect(master);
+    const hiss = ac.createBiquadFilter(); hiss.type = 'bandpass'; hiss.frequency.value = 2400; hiss.Q.value = 0.6;
+    const hissG = ac.createGain(); hissG.gain.value = 0;
+    loop(white, 1.3).connect(hiss); hiss.connect(hissG); hissG.connect(master);
+    const windF = ac.createBiquadFilter(); windF.type = 'bandpass'; windF.frequency.value = 700; windF.Q.value = 0.8;
+    const windG = ac.createGain(); windG.gain.value = 0.012;
+    loop(brown, 2.1).connect(windF); windF.connect(windG); windG.connect(master);
+    const rainF = ac.createBiquadFilter(); rainF.type = 'highpass'; rainF.frequency.value = 1800;
+    const rainG = ac.createGain(); rainG.gain.value = 0;
+    loop(white, 0.7).connect(rainF); rainF.connect(rainG); rainG.connect(master);
+    const rumF = ac.createBiquadFilter(); rumF.type = 'lowpass'; rumF.frequency.value = 90;
+    const rumG = ac.createGain(); rumG.gain.value = 0;
+    loop(brown, 3.3).connect(rumF); rumF.connect(rumG); rumG.connect(master);
+    const whF = ac.createBiquadFilter(); whF.type = 'bandpass'; whF.frequency.value = 2500; whF.Q.value = 1.4;
+    const whG = ac.createGain(); whG.gain.value = 0;
+    loop(white, 2.7).connect(whF); whF.connect(whG); whG.connect(master);
+    audio = { ac, master, surfF, surfG, hissG, windF, windG, rainG, rumG, white, whF, whG };
+  } catch (err) { audio = null; }
+}
+
+
+/* ---------- 主迴圈 ---------- */
+const clock = new THREE.Clock();
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), lead = new THREE.Vector3();
+const metersEl = document.getElementById('meters');
+let hudDist = -1;
+
+let heroMoving = false;
+function blocked(x, z){
+  for (const c of colliders){ const dx = x-c.x, dz = z-c.z; if (dx*dx+dz*dz < c.r*c.r) return c; }
+  return null;
+}
+function step(dt){
+  const t = U.uTime.value;
+  let mx = 0, mz = 0;
+  if (st.started){
+    // 人物只會自動散步，玩家不能控制方向和速度
+    {
+      // 沿著浪線走，偶爾讓浪打到腳邊
+      const tz = shoreZ(st.x + 4) - 3.2 + 2.2*Math.sin(st.x*0.045) ;
+      mx = 1; mz = THREE.MathUtils.clamp((tz - st.z)*0.35, -0.6, 0.6);
+      for (const look of [2.5, 4.5]){
+        const c = blocked(st.x + look, st.z + mz*look*0.5);
+        if (c){ mz += (st.z >= c.z ? 1 : -1) * 0.9; break; }
+      }
+    }
+  }
+  const l = Math.hypot(mx, mz), moving = l > 0.01;
+  heroMoving = moving;
+  st.moveFwd = moving ? (mx*Math.cos(camYaw) - mz*Math.sin(camYaw))/l : 0;
+  const speed = WALK * (st.z > front(st.x, t) ? 0.7 : 1);
+  if (moving){
+    mx /= l; mz /= l;
+    let nx = st.x + mx*speed*dt, nz = st.z + mz*speed*dt;
+    for (const c of colliders){ const dx = nx-c.x, dz = nz-c.z, d = Math.hypot(dx,dz); if (d < c.r && d > 1e-4){ nx = c.x + dx/d*c.r; nz = c.z + dz/d*c.r; } }
+    nz = THREE.MathUtils.clamp(nz, cliffZ(nx) + 1.2, shoreZ(nx) + 4);
+    const moved = Math.hypot(nx - st.x, nz - st.z);
+    st.x = nx; st.z = nz;
+    if (st.x > st.maxX){ st.dist += st.x - st.maxX; st.maxX = st.x; }
+    const targetYaw = Math.atan2(-mz, mx);
+    let dy = targetYaw - st.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); st.yaw += dy * Math.min(1, dt*8);
+    st.phase += moved * 2.6;
+    const stepIdx = Math.floor(st.phase / Math.PI);
+    if (stepIdx !== st.lastStep){ st.lastStep = stepIdx; const side = (stepIdx & 1) ? 1 : -1;
+      addFootprint(st.x - Math.sin(st.yaw)*0.13*side, st.z - Math.cos(st.yaw)*0.13*side, st.yaw); }
+  }
+  const swing = moving ? Math.sin(st.phase) : 0;
+  // 步態：髖 = sin，膝在小腿往前擺（cos>0）時彎最多，著地時微彎吸收衝擊；腳掌跟著保持水平、離地時腳尖下垂
+  legs.forEach((l, j) => { const ph = st.phase + j*Math.PI, hip = moving ? Math.sin(ph)*0.5 : 0;
+    const c = Math.cos(ph), kneeA = moving ? -(0.12 + 1.05*Math.pow(Math.max(0, c), 1.6) + 0.18*Math.max(0, Math.sin(ph))) : -0.04;
+    l.rotation.z = hip; l.userData.knee.rotation.z = kneeA;
+    l.userData.ankle.rotation.z = -(hip + kneeA) + (moving ? -0.35*Math.max(0, -Math.sin(ph))*Math.max(0, -c) : 0); });
+  arms[0].rotation.z = -swing*0.4; arms[1].rotation.z = swing*0.4;
+  hero.position.set(st.x, height(st.x, st.z) + (moving ? Math.abs(Math.cos(st.phase))*0.05 : 0), st.z);
+  hero.rotation.y = st.yaw;
+  glow.position.set(st.x, hero.position.y + 0.05, st.z);
+  const wet = moving && st.z > front(st.x, U.uTime.value) - 0.3;
+  for (let i=0;i<splash.length;i++){ const m = splash[i]; m.visible = wet;
+    if (wet && Math.random() < dt*12){ const a = Math.random()*6.28, rr = 0.1 + Math.random()*0.35;
+      m.position.set(st.x + Math.cos(a)*rr, hero.position.y + 0.03 + Math.random()*0.28, st.z + Math.sin(a)*rr); } }
+}
+
+function frame(){
+  const dt = Math.min(clock.getDelta(), 0.05);
+  U.uTime.value += dt;
+  const t = U.uTime.value;
+  step(dt);
+  updateChunks(st.x + Math.cos(camYaw)*120);
+  updateFootprints(t);
+
+  // 鏡頭：固定高角度，往前方多留一點空間
+  // 鏡頭一律慢慢轉到人物身後（轉身時轉得比較快），任何鏡位都不拍正面
+  if (heroMoving){ let d = st.yaw - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d * Math.min(1, dt*(Math.abs(d) > 1.2 ? 2.2 : 0.8)); }
+  const fx = Math.cos(camYaw), fz = -Math.sin(camYaw);
+  const hy = hero.position.y;
+  const o = { x: st.x, y: hy, z: st.z, f:[fx, fz], r:[-fz, fx] };
+  // 電影模式：每 9～16 秒剪到另一個鏡位
+  if (cam.cinema && SHOTS.length > 1 && t > cam.next){
+    // 望遠跟拍權重較高，其他鏡位穿插
+    const tot = SHOTS.reduce((n, s) => n + (s.w || 1), 0);
+    let i; do { let u = Math.random()*tot; i = 0; while ((u -= (SHOTS[i].w || 1)) > 0) i++; } while (i === cam.shot);
+    cutTo(i, o); cam.next = t + 9 + Math.random()*7;
+  }
+  const S = SHOTS[cam.shot];
+  let a;
+  if (S.still){
+    // 人物走遠超過 45 公尺就換到下一個定點
+    const dx = st.x - cam.still.x, dz = st.z - cam.still.z;
+    if (Math.hypot(dx, dz) > 95 || dx*fx + dz*fz < 2) { placeStill(o); cam.snap = true; }   // 走太遠或轉身朝鏡頭就換定點
+    a = [cam.still.x, cam.still.y, cam.still.z, st.x, hy + 1.3, st.z];
+  } else a = S.at(o);
+  // 玩家的繞轉與縮放：以人物為中心旋轉鏡頭與注視點；鏡頭和人物背後的夾角限制在 80° 內，永遠不拍正面
+  if (keys.has('arrowleft') || keys.has('a')) cam.orbitT += dt*0.9;
+  if (keys.has('arrowright')|| keys.has('d')) cam.orbitT -= dt*0.9;
+  if (keys.has('arrowleft') || keys.has('a') || keys.has('arrowright') || keys.has('d') || drag.size) cam.lastIn = performance.now();
+  // 手動轉過鏡頭後放著不動 10 秒，鏡頭慢慢轉回角色背後
+  else if (cam.orbitT !== 0 && performance.now() - (cam.lastIn || 0) > 10000){ cam.orbitT *= Math.exp(-dt*0.45); if (Math.abs(cam.orbitT) < 0.002) cam.orbitT = 0; }
+  clampCam();
+  cam.orbit += (cam.orbitT - cam.orbit) * Math.min(1, dt*5); cam.zoom += (cam.zoomT - cam.zoom) * Math.min(1, dt*5);
+  {
+    const vx = a[0] - st.x, vz = a[2] - st.z, back = Math.atan2(-fz, -fx);
+    let ang = Math.atan2(vz, vx) - back; ang = Math.atan2(Math.sin(ang), Math.cos(ang));
+    const na = THREE.MathUtils.clamp(ang + cam.orbit, -1.4, 1.4), rot = na - ang, c = Math.cos(rot), sn = Math.sin(rot), hz = Math.hypot(vx, vz) * cam.zoom;
+    const ca = Math.atan2(vz, vx) + rot;
+    a[0] = st.x + Math.cos(ca)*hz; a[2] = st.z + Math.sin(ca)*hz; a[1] = hy + (a[1] - hy) * cam.zoom;
+    const lx = a[3] - st.x, lz = a[5] - st.z; a[3] = st.x + lx*c - lz*sn; a[5] = st.z + lx*sn + lz*c;
+  }
+  lead.set(a[0], a[1], a[2]);
+  // 鏡頭不能鑽進地形：本身高於地面，和人物之間的視線也要越過沿途的崖壁與丘陵
+  {
+    const gy = (x, z) => Math.max(z < -110 ? farH(x, z) + 0.45 : height(x, z), 0);
+    let need = gy(lead.x, lead.z) + 3;
+    const ty = hy + 1.2;
+    for (let i=1;i<8;i++){ const f = i/8, x = st.x + (lead.x - st.x)*f, z = st.z + (lead.z - st.z)*f, g = gy(x, z) + 1.5;
+      if (g > ty) need = Math.max(need, ty + (g - ty)/f); }
+    lead.y = Math.max(lead.y, need);
+  }
+  const kk = cam.snap ? 1 : 1 - Math.exp(-dt*S.k);
+  camPos.lerp(lead, kk);
+  lead.set(a[3], a[4], a[5]);
+  camLook.lerp(lead, cam.snap ? 1 : 1 - Math.exp(-dt*S.k*0.8));
+  cam.snap = false;
+  const fov = S.fov * (RW < RH ? 1.35 : 1);
+  if (camera.fov !== fov){ camera.fov = fov; camera.updateProjectionMatrix(); }
+  camera.position.copy(camPos); camera.lookAt(camLook);
+  if (st.shake > 0.01){ st.shake *= Math.exp(-dt*0.9); const sk = st.shake*0.35;   // 轟鳴時鏡頭震動
+    camera.position.x += (Math.random()-0.5)*sk; camera.position.y += (Math.random()-0.5)*sk; camera.rotation.z += (Math.random()-0.5)*sk*0.01; }
+  ghostTowers();
+  const sc = lead.set(st.x + fx*40, 0, st.z + fz*40);
+  sun.position.copy(sc).add(SUN_OFF); sun.target.position.copy(sc);
+  water.position.x = Math.round(camPos.x);
+  sky.position.copy(camPos);
+
+  // 末日事件：每 35～70 秒一次地平線閃光（大退潮、落灰已取消）
+  if (st.started && t > (st.nextEv ?? 18)){
+    const types = ['flash'];   // 大退潮、落灰都已取消，只剩地平線閃光
+    const ty = types[Math.floor(Math.random()*types.length)];
+    st.ev = { ty, t0: t }; st.lastEv = ty; st.nextEv = t + 35 + Math.random()*35;
+  }
+  let flash = 0, ashK = 0; REC = 0;
+  if (st.ev){ const e = t - st.ev.t0;
+    if (st.ev.ty === 'recede'){
+      // 海水 16 秒內退到 70 公尺外，停 10 秒，再 7 秒湧回來
+      REC = e < 16 ? 70*smooth(0,16,e) : e < 26 ? 70 : e < 33 ? 70*(1 - smooth(26,33,e)) : 0;
+      if (e > 33) st.ev = null;
+      if (audio && e > 26 && e < 26.1){ const at = audio.ac.currentTime; audio.rumG.gain.cancelScheduledValues(at); audio.rumG.gain.setValueAtTime(0, at);
+        audio.rumG.gain.linearRampToValueAtTime(0.7, at + 3); audio.rumG.gain.linearRampToValueAtTime(0, at + 10); }
+    } else if (st.ev.ty === 'flash'){
+      // 遠方一道強光（兩次閃爍），3 秒後才傳來轟鳴
+      if (st.ev.fa === undefined) st.ev.fa = Math.atan2(-Math.sin(camYaw), Math.cos(camYaw)) + 0.15 + Math.random()*0.35;   // 前方偏海那側的地平線
+      sky.material.uniforms.uFlashA.value = st.ev.fa;
+      flash = e < 0.12 ? e/0.12 : Math.exp(-(e-0.12)*1.3) * (1 + 0.6*Math.max(0, Math.sin(e*18))*Math.exp(-e*2));
+      if (audio && e > 3 && !st.ev.boom){ st.ev.boom = true; const at = audio.ac.currentTime; audio.rumG.gain.cancelScheduledValues(at); audio.rumG.gain.setValueAtTime(0, at);
+        audio.rumG.gain.linearRampToValueAtTime(1.0, at + 0.6); audio.rumG.gain.linearRampToValueAtTime(0, at + 9); }
+      if (e > 12) st.ev = null;
+    } else {
+      // 落灰 45 秒，前後各漸變 8 秒
+      ashK = e < 8 ? e/8 : e < 37 ? 1 : Math.max(0, (45-e)/8);
+      if (e > 45) st.ev = null;
+    }
+  }
+  if (st.streak){ const S = st.streak, e = t - S.t0, k = Math.min(1, e/STREAK_T);
+    if (k < 1){
+      // 先慢後快劃過天空，往海平線俯衝
+      const u = k*k*(1.6 - 0.6*k), P = V2.copy(S.a).lerp(S.b, u); P.y = S.a.y + (S.b.y - S.a.y)*Math.pow(u, 0.7);
+      streakMesh.visible = true; streakMesh.position.copy(P); streakMesh.lookAt(S.b);
+      S.pts.push(P.clone()); if (S.pts.length > TRAIL_N + 1) S.pts.shift();
+    } else { streakMesh.visible = false; if (S.hit < 0){ S.hit = t; S.fa = Math.atan2(S.b.z - camPos.z, S.b.x - camPos.x); } S.pts.shift(); }
+    for (let i=0;i<TRAIL_N;i++){ const a = S.pts[i], b = S.pts[i+1], j = i*6;
+      if (a && b){ trailPos[j]=a.x; trailPos[j+1]=a.y; trailPos[j+2]=a.z; trailPos[j+3]=b.x; trailPos[j+4]=b.y; trailPos[j+5]=b.z; } else trailPos.fill(-9999, j, j+6); }
+    trailGeo.attributes.position.needsUpdate = true; trail.visible = S.pts.length > 1;
+    if (S.hit >= 0){ const h = t - S.hit;
+      // 越過海平線：地平線那一段亮起，1.5 秒後聲音才傳來
+      const f = h < 0.15 ? h/0.15 : Math.exp(-(h - 0.15)*0.9) * (1 + 0.5*Math.max(0, Math.sin(h*14))*Math.exp(-h*1.5));
+      if (f*1.4 > flash){ flash = Math.min(1.6, f*1.4); sky.material.uniforms.uFlashA.value = S.fa; }
+      if (!S.boom && e > BOOM_AT){ S.boom = true; boom(); st.shake = 1; }
+      if (h > 12 && S.pts.length === 0){ st.streak = null; trail.visible = false; }
+    }
+  }
+  U.uSQ.value.w = REC; post.uniforms.flash.value = 0; sky.material.uniforms.uFlash.value = flash;
+  post.uniforms.fogN.value = scene.fog.near; post.uniforms.fogF.value = scene.fog.far;
+  ash.visible = ashK > 0.01; ash.material.opacity = 0.95*ashK;
+  if (ash.visible){
+    for (let i=0;i<ASH_N;i++){ const d = ashSeed[i];
+      d.y -= d.v*dt; if (d.y < -1){ d.y = 15; d.x = (Math.random()-0.5)*50; d.z = (Math.random()-0.5)*50; }
+      const x = camPos.x + Math.cos(camYaw)*18 + d.x + Math.sin(t*0.6 + d.p)*0.8, z = camPos.z - Math.sin(camYaw)*18 + d.z + Math.cos(t*0.5 + d.p)*0.8, j = i*6;
+      ashPos[j] = x; ashPos[j+1] = d.y; ashPos[j+2] = z; ashPos[j+3] = x + 0.16; ashPos[j+4] = d.y + 0.1; ashPos[j+5] = z + 0.08; }
+    ashGeo.attributes.position.needsUpdate = true;
+  }
+
+  // 崩塌：每隔一段時間，前方海裡一棟大樓慢慢倒進海裡，伴隨低頻轟鳴
+  if (st.started && t > (st.nextFall ?? 25)){
+    st.nextFall = t + 40 + Math.random()*35;
+    const cand = fallers.filter(f => { if (f.t0 >= 0) return false; const w = f.p.getWorldPosition(V1), dx = w.x - st.x, dz = w.z - st.z, d = Math.hypot(dx, dz);
+      return d > 50 && d < 200 && (dx*fx + dz*fz) > 0.4*d; });
+    if (cand.length){ const f = cand[Math.floor(Math.random()*cand.length)]; f.t0 = t;
+      if (audio){ const at = audio.ac.currentTime; audio.rumG.gain.cancelScheduledValues(at); audio.rumG.gain.setValueAtTime(0, at);
+        audio.rumG.gain.linearRampToValueAtTime(0.9, at + 4); audio.rumG.gain.linearRampToValueAtTime(0.5, at + 14); audio.rumG.gain.linearRampToValueAtTime(0, at + 24); } }
+  }
+  for (const f of fallers){ if (f.t0 < 0) continue; const el = t - f.t0; if (el > 24) continue;
+    // 水花：樓身沒入海面的那條線一路濺起，樓頂砸進海裡時一次大爆開
+    const bw = f.p.getWorldPosition(V1), tw = f.p.localToWorld(V2.set(0, f.H, 0));
+    const k = THREE.MathUtils.clamp((0.3 - bw.y)/Math.max(0.01, tw.y - bw.y), 0, 1);
+    spray(bw.x + (tw.x - bw.x)*k, bw.z + (tw.z - bw.z)*k, Math.random() < dt*(6 + el*1.5) ? 6 : 0, 2.5 + el*0.3, 5);
+    if (!f.big && (tw.y < 14 || el > 21)){ f.big = true; spray(tw.x, tw.z, 420, 10, 14); spray(bw.x + (tw.x - bw.x)*0.6, bw.z + (tw.z - bw.z)*0.6, 240, 7, 18); }
+    f.p.rotation.x += Math.sign(f.p.rotation.x || 1) * dt * (0.004 + el*0.0026);
+    f.p.rotation.z += f.dir * dt * (0.002 + el*0.0012);
+    f.p.position.y -= dt * (0.15 + el*0.04); }
+  updateSplash(dt);
+
+  // 進入新區段：依種子換天氣與霧
+  const RG = region(st.x);
+  if (RG.i !== st.regionI){ st.regionI = RG.i; st.rainTarget = RG.rain; st.fogT = RG.fog; renderKeys(); }   // 色盤只換顏色，不影響下雨
+  st.fogK += (st.fogT - st.fogK) * Math.min(1, dt*0.15);
+
+  // 天氣
+  // 雨勢慢慢轉變：大約 25 秒從無到滿，停雨也一樣慢慢收
+  st.rain += THREE.MathUtils.clamp(st.rainTarget - st.rain, -dt/25, dt/25);
+  const r = st.rain;
+  sun.intensity = (1.9 - 0.7*r - 0.4*st.fogK) * PALS[st.pal].sun; hemi.intensity = 0.28 + 0.06*r;
+  scene.fog.near = 300; scene.fog.far = 1300;   // 近中景完全不起霧，只有超遠方淡淡化進天色
+  scene.fog.color.setScalar(0.46 - 0.18*r - 0.06*st.fogK); scene.background.copy(scene.fog.color);
+  water.material.uniforms.fogNear.value = scene.fog.near; water.material.uniforms.fogFar.value = scene.fog.far;
+  glow.material.uniforms.k.value = PALS[st.pal].glow + 0.2*r;
+  // 雨滴一顆顆從天上開始落：要下的雨滴從高處生成、陸續落下；停雨時已在空中的雨滴落完才消失
+  const active = Math.round(r*r*RAIN_N), rBot = hero.position.y - 1, rTop = hero.position.y + 15;
+  let any = false;
+  rain.material.opacity = 0.22;
+  for (let i=0;i<RAIN_N;i++){ const d = rainSeed[i], want = i < active, j = i*6;
+    if (!d.on && want && Math.random() < dt*0.8){ d.on = true; d.y = rTop + Math.random()*4; d.x = (Math.random()-0.5)*40; d.z = (Math.random()-0.5)*40; }
+    if (d.on){ d.y -= d.v*dt;
+      if (d.y < rBot){ if (want){ d.y = rTop + Math.random()*2; d.x = (Math.random()-0.5)*40; d.z = (Math.random()-0.5)*40; } else d.on = false; } }
+    if (d.on){ any = true;
+      const x = camPos.x + Math.cos(camYaw)*16 + d.x - (d.y - rBot)*0.12 + Math.sin(t*0.7 + i)*0.15, z = camPos.z - Math.sin(camYaw)*16 + d.z;
+      rainPos[j] = x; rainPos[j+1] = d.y; rainPos[j+2] = z; rainPos[j+3] = x + 0.03; rainPos[j+4] = d.y + 0.22; rainPos[j+5] = z;
+    } else { rainPos[j] = rainPos[j+3] = 0; rainPos[j+1] = rainPos[j+4] = -999; rainPos[j+2] = rainPos[j+5] = 0; }
+  }
+  rain.visible = any; if (any) rainGeo.attributes.position.needsUpdate = true;
+
+  // 聲音
+  if (audio){
+    const s0 = swash(st.x, t), rate = (swash(st.x, t + 0.25) - s0) * 4;   // >0 浪正在湧上來
+    const near = 1 - smooth(4, 26, Math.abs(st.z - front(st.x, t)));
+    const at = audio.ac.currentTime;
+    const recK = 1 - Math.min(1, REC/40);   // 退潮時浪聲變遠
+    audio.surfG.gain.setTargetAtTime((0.12 + 0.55*Math.max(0, rate)*(0.4+0.6*near) + 0.08*s0) * (0.25 + 0.75*recK), at, 0.3);
+    audio.surfF.frequency.setTargetAtTime(280 + 900*Math.max(0, rate), at, 0.3);
+    audio.hissG.gain.setTargetAtTime(0.05*Math.max(0, -rate)*near, at, 0.4);
+    audio.windG.gain.setTargetAtTime(0.012 + 0.006*Math.sin(t*0.21) + 0.008*r, at, 0.5);
+    audio.windF.frequency.setTargetAtTime(600 + 250*Math.sin(t*0.13), at, 0.5);
+    audio.rainG.gain.setTargetAtTime(0.035*r, at, 0.5);
+  }
+
+  // HUD
+  const m = Math.floor(st.dist);
+  if (m !== hudDist){ hudDist = m; metersEl.textContent = m.toLocaleString('en-US'); }
+
+  renderer.setRenderTarget(rt); renderer.render(scene, camera);
+  renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+  requestAnimationFrame(frame);
+}
+
+resize();
+function applySeed(seed){
+  SEED = seed; seedParams(); syncSeedUniforms();
+  for (const c of chunks.values()){ scene.remove(c.g); c.g.traverse(o => o.geometry && o.geometry.dispose()); }
+  for (const g of farChunks.values()){ scene.remove(g); g.traverse(o => o.geometry && o.geometry.dispose()); }
+  chunks.clear(); farChunks.clear(); fallers.length = 0; colliders = [];
+  st.z = shoreZ(st.x) - 3.5; st.regionI = null;
+  for (let i=0;i<FP_MAX;i++){ fps[i] = null; fpMesh.setMatrixAt(i, M0); } fpMesh.instanceMatrix.needsUpdate = true;
+  updateChunks(st.x + Math.cos(camYaw)*120); cam.snap = true;
+  try { history.replaceState(null, '', '#s' + seed); } catch (e) {}
+  document.getElementById('seed').textContent = 'SEED ' + String(seed).padStart(5, '0');
+}
+document.getElementById('seed').textContent = 'SEED ' + String(SEED).padStart(5, '0');
+updateChunks(120);
+cam.snap = true;
+renderKeys();
+requestAnimationFrame(frame);
+
+document.getElementById('start').addEventListener('click', () => {
+  st.started = true;
+  document.getElementById('intro').classList.add('gone');
+  document.getElementById('hud').hidden = false;
+  startAudio();
+});
+window.__beach = st;
+</script>
