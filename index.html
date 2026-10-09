@@ -26,8 +26,13 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(-
 .keys b{font-weight:400;letter-spacing:.14em;font-size:12px;align-self:center;color:var(--ui-dim)}
 .keys i{font-style:italic;text-align:left}
 .keys .off{color:var(--ui-dim)}
-#streakBtn{pointer-events:auto;font:inherit;font-style:italic;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--ui);padding:0;cursor:pointer}
-#streakBtn:focus-visible{outline:1px solid var(--ui);outline-offset:3px}
+button.k{all:unset;display:contents;cursor:pointer;pointer-events:auto}
+button.k i{pointer-events:auto}
+button.k:hover i{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+button.k:focus-visible i{outline:1px solid var(--ui);outline-offset:2px}
+#uiBtn{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:calc(20px + env(safe-area-inset-right,0px));font:inherit;font-style:italic;font-size:16px;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--rule);padding:6px 0 3px;cursor:pointer;text-shadow:0 1px 12px rgba(0,0,0,.35);opacity:.85;-webkit-tap-highlight-color:transparent}
+#uiBtn:hover{opacity:1}
+#uiBtn:focus-visible{outline:1px solid var(--ui);outline-offset:4px}
 #intro{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;padding:0 28px calc(56px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(10,9,6,.78),rgba(10,9,6,.25) 50%,rgba(10,9,6,0) 75%);transition:opacity 1.6s}
 #intro.gone{opacity:0;pointer-events:none}
 #intro .kicker{font-size:13px;letter-spacing:.32em;color:var(--ui-dim);margin:0 0 10px}
@@ -38,7 +43,8 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(-
 #start span{display:inline-block;transition:transform .3s}
 #start:hover span{transform:translateX(6px)}
 #start:focus-visible{outline:1px solid var(--ui);outline-offset:6px}
-@media (max-width:560px){.keys{display:none}.dist .num{font-size:40px}.hud{padding-inline:16px}#intro{padding-inline:16px}}
+@media (max-width:560px){.dist .num{font-size:40px}.dist small{min-width:0}.hud{padding-inline:16px;gap:12px}#intro{padding-inline:16px}.keys{font-size:15px;row-gap:0}#uiBtn{right:calc(16px + env(safe-area-inset-right,0px))}}
+@media (hover:none){.keys{grid-template-columns:auto;row-gap:4px}.keys b{display:none}.keys i{text-align:right;padding:6px 0}.keys>i{display:none}}
 @media (prefers-reduced-motion:reduce){#intro{transition:none}#start span{transition:none}}
 </style>
 
@@ -47,6 +53,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(-
   <div class="dist"><div class="num"><span id="meters">0</span><em>m</em></div><small id="seed" hidden></small></div>
   <div class="keys" id="keys"></div>
 </div>
+<button id="uiBtn" type="button" hidden>Hide UI</button>
 <div id="intro">
   <h1>An endless coast</h1>
   <div class="rule"></div>
@@ -188,7 +195,7 @@ let RW = 4, RH = 4, SCALE = 3;
 function resize(){
   const W = innerWidth, H = innerHeight;
   const dpr = Math.min(devicePixelRatio || 1, 3), DW = W*dpr, DH = H*dpr;
-  SCALE = Math.max(2, Math.round(Math.min(DW, DH) / BASE_H));
+  SCALE = Math.max(2, Math.round(Math.max(DW, DH) / (BASE_H*16/9)));   // 以長邊為準，手機和桌機的點陣顆粒一樣大
   RW = Math.ceil(DW / SCALE); RH = Math.ceil(DH / SCALE);
   renderer.setSize(RW, RH, false);
   canvas.style.width = RW*SCALE/dpr + 'px'; canvas.style.height = RH*SCALE/dpr + 'px';
@@ -781,17 +788,29 @@ const ray = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vecto
 addEventListener('keydown', e => {
   if (!st.started) return;
   const k = e.key.toLowerCase();
-  if (k === 'm') { st.muted = !st.muted; if (audio) audio.master.gain.value = st.muted ? 0 : 0.9; renderKeys(); return; }
-  if (k === 'r') { st.rainTarget = st.rainTarget ? 0 : 1; renderKeys(); return; }
-  if (k === 'p') { setPalette((st.pal + 1) % PALS.length); return; }   // 換色盤（使用者要求加回來看看）
-  if (k === 'n') { applySeed(Math.floor(Math.random()*1e5)); return; }
-  if (k === 'o' || k === '0') { cam.orbitT = 0; cam.zoomT = 1; return; }   // O 或 0 都能回正
+  const a = KEYMAP[k]; if (a) { ACT[a](); return; }
   if (['arrowup','arrowdown','arrowleft','arrowright','a','d','w','s'].includes(k)) { keys.add(k); e.preventDefault(); }
 });
 addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); });
 // 鏡頭控制：拖曳繞著人物轉（只在身後半圈）、上下拖或滾輪縮放、雙擊回正
+const KEYMAP = { m:'sound', r:'rain', p:'palette', n:'shore', o:'reset', '0':'reset', h:'ui' };   // O 或 0 都能回正
+const ACT = {
+  sound(){ st.muted = !st.muted; if (audio) audio.master.gain.value = st.muted ? 0 : 0.9; resumeAudio(); renderKeys(); },
+  rain(){ st.rainTarget = st.rainTarget ? 0 : 1; renderKeys(); },
+  palette(){ setPalette((st.pal + 1) % PALS.length); },
+  shore(){ applySeed(Math.floor(Math.random()*1e5)); },
+  reset(){ cam.orbitT = 0; cam.zoomT = 1; },
+  ui(){ setUI(!st.uiOn); },
+};
+const hudEl = document.getElementById('hud'), uiBtn = document.getElementById('uiBtn');
+st.uiOn = true;
+function setUI(on){ st.uiOn = on; hudEl.hidden = !on; uiBtn.textContent = on ? 'Hide UI' : 'Show UI'; uiBtn.setAttribute('aria-pressed', String(!on)); }
+uiBtn.addEventListener('click', () => ACT.ui());
 const drag = new Map();
-canvas.addEventListener('pointerdown', e => { if (!st.started) return; drag.set(e.pointerId, { x:e.clientX, y:e.clientY }); canvas.setPointerCapture(e.pointerId); });
+let lastTap = 0;
+canvas.addEventListener('pointerdown', e => { if (!st.started) return; resumeAudio();
+  if (e.pointerType === 'touch'){ const now = performance.now(); if (now - lastTap < 300) ACT.reset(); lastTap = now; }   // 手機雙點回正
+  drag.set(e.pointerId, { x:e.clientX, y:e.clientY }); canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', e => {
   const d = drag.get(e.pointerId); if (!d) return;
   const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
@@ -800,7 +819,7 @@ canvas.addEventListener('pointermove', e => {
 });
 const up = e => { drag.delete(e.pointerId); };
 canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
-canvas.addEventListener('dblclick', () => { cam.orbitT = 0; cam.zoomT = 1; });
+canvas.addEventListener('dblclick', () => ACT.reset());
 function clampCam(){ cam.orbitT = THREE.MathUtils.clamp(cam.orbitT, -1.3, 1.3); cam.zoomT = 1; }
 
 function setPalette(i){
@@ -840,16 +859,31 @@ function boom(){
   n.connect(nf); nf.connect(ng); ng.connect(audio.master); n.start(at); n.stop(at + 2.6);
 }
 const keysEl = document.getElementById('keys');
+keysEl.addEventListener('click', e => { const b = e.target.closest('button[data-a]'); if (b && ACT[b.dataset.a]) ACT[b.dataset.a](); });
 function renderKeys(){
+  const B = (a, k, label, off) => `<button class="k" type="button" data-a="${a}"><b>${k}</b><i class="${off?'off':''}">${label}</i></button>`;
   keysEl.innerHTML =
-    `<b>DRAG</b><i>orbit</i><b>O</b><i>reset view</i><b>N</b><i>new shore</i>` +
-    `<b>R</b><i class="${st.rainTarget?'':'off'}">rain ${st.rainTarget?'on':'off'}</i>` +
-    `<b>M</b><i class="${st.muted?'off':''}">sound ${st.muted?'off':'on'}</i>` +
-    `<b>P</b><i>palette · ${PALS[st.pal].en.toLowerCase()}</i>`;
+    `<b>DRAG</b><i>orbit</i>` + B('reset','O','reset view') + B('shore','N','new shore') +
+    B('rain','R',`rain ${st.rainTarget?'on':'off'}`, !st.rainTarget) +
+    B('sound','M',`sound ${st.muted?'off':'on'}`, st.muted) +
+    B('palette','P',`palette · ${PALS[st.pal].en.toLowerCase()}`);
 }
 
 /* ---------- 聲音：程序化海浪、風、雨 ---------- */
 let audio = null;
+function resumeAudio(){ if (audio && audio.ac.state !== 'running') audio.ac.resume().catch(() => {}); }
+// iOS 靜音鍵開著時 WebAudio 會被歸為鈴聲類而沒聲音：先播一段無聲的 <audio>，把 session 切成媒體播放
+function unlockMedia(){
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try {
+    const n = 2205, b = new ArrayBuffer(44 + n*2), v = new DataView(b), w = (o, t) => { for (let i=0;i<t.length;i++) v.setUint8(o+i, t.charCodeAt(i)); };
+    w(0,'RIFF'); v.setUint32(4, 36 + n*2, true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,22050,true); v.setUint32(28,44100,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40, n*2, true);
+    const el = new Audio(URL.createObjectURL(new Blob([b], { type:'audio/wav' })));
+    el.setAttribute('playsinline', ''); el.loop = true; el.volume = 0.01; const pr = el.play(); if (pr) pr.catch(() => {});
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAudio(); });
 function startAudio(){
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -876,7 +910,9 @@ function startAudio(){
     const whF = ac.createBiquadFilter(); whF.type = 'bandpass'; whF.frequency.value = 2500; whF.Q.value = 1.4;
     const whG = ac.createGain(); whG.gain.value = 0;
     loop(white, 2.7).connect(whF); whF.connect(whG); whG.connect(master);
+    master.gain.value = st.muted ? 0 : 0.9;
     audio = { ac, master, surfF, surfG, hissG, windF, windG, rainG, rumG, white, whF, whG };
+    resumeAudio();
   } catch (err) { audio = null; }
 }
 
@@ -1002,7 +1038,9 @@ function frame(){
   lead.set(a[3], a[4], a[5]);
   camLook.lerp(lead, cam.snap ? 1 : 1 - Math.exp(-dt*S.k*0.8));
   cam.snap = false;
-  const fov = S.fov * (RW < RH ? 1.35 : 1);
+  const a16 = 16/9, asp = RW / RH, hHalf = Math.atan(Math.tan(S.fov*Math.PI/360)*a16);   // 桌機 16:9 時的水平視角
+  let fov = S.fov;
+  if (asp < a16) fov = Math.min(70, Math.max(S.fov, 2*Math.atan(Math.tan(hHalf*(asp < 1 ? 0.75 : 1))/asp)*180/Math.PI));   // 窄螢幕保住水平視角
   if (camera.fov !== fov){ camera.fov = fov; camera.updateProjectionMatrix(); }
   camera.position.copy(camPos); camera.lookAt(camLook);
   if (st.shake > 0.01){ st.shake *= Math.exp(-dt*0.9); const sk = st.shake*0.35;   // 轟鳴時鏡頭震動
@@ -1163,8 +1201,8 @@ requestAnimationFrame(frame);
 document.getElementById('start').addEventListener('click', () => {
   st.started = true;
   document.getElementById('intro').classList.add('gone');
-  document.getElementById('hud').hidden = false;
-  startAudio();
+  unlockMedia(); startAudio();
+  setUI(true); uiBtn.hidden = false;
 });
 window.__beach = st;
 </script>

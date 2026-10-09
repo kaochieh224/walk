@@ -20,6 +20,9 @@ Or open `index.html` in a modern browser. It is a single file; three.js loads fr
 | R | Rain on / off (fades in and out) |
 | M | Sound on / off |
 | P | Palette: dusk / rain / night |
+| H | Hide / show the UI (also the button top-right) |
+
+On phones and tablets: drag with one finger to orbit, double-tap to reset the view, and tap the labels bottom-right to toggle rain, sound and palette. Sound starts when you tap *Begin walking*.
 
 A specific shore can be opened with a seed in the URL hash, e.g. `index.html#s12345`.
 
