@@ -22,14 +22,14 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(-
 .dist .num{font-size:56px;line-height:.9;font-style:italic;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .dist .num em{font-size:24px;margin-left:6px;font-style:italic;color:var(--ui-dim)}
 .dist small{font-size:13px;letter-spacing:.24em;color:var(--ui-dim);border-top:1px solid var(--rule);padding-top:6px;min-width:150px}
-.keys{display:grid;grid-template-columns:auto auto;column-gap:14px;row-gap:2px;text-align:right;font-size:16px;line-height:1.35}
-.keys b{font-weight:400;letter-spacing:.14em;font-size:12px;align-self:center;color:var(--ui-dim)}
-.keys i{font-style:italic;text-align:left}
+.keys{display:flex;flex-direction:column;align-items:stretch;gap:2px;font-size:16px;line-height:1.35}
+.keys .row,button.k{display:grid;grid-template-columns:4em 1fr;column-gap:14px;align-items:center;text-align:left}
+.keys b{font-weight:400;letter-spacing:.14em;font-size:12px;text-align:right;color:var(--ui-dim)}
+.keys i{font-style:italic}
 .keys .off{color:var(--ui-dim)}
-button.k{all:unset;display:contents;cursor:pointer;pointer-events:auto}
-button.k i{pointer-events:auto}
+button.k{pointer-events:auto;font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;text-shadow:inherit}
 button.k:hover i{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
-button.k:focus-visible i{outline:1px solid var(--ui);outline-offset:2px}
+button.k:focus-visible{outline:1px solid var(--ui);outline-offset:2px}
 #uiBtn{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:calc(20px + env(safe-area-inset-right,0px));font:inherit;font-style:italic;font-size:16px;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--rule);padding:6px 0 3px;cursor:pointer;text-shadow:0 1px 12px rgba(0,0,0,.35);opacity:.85;-webkit-tap-highlight-color:transparent}
 #uiBtn:hover{opacity:1}
 #uiBtn:focus-visible{outline:1px solid var(--ui);outline-offset:4px}
@@ -44,7 +44,7 @@ button.k:focus-visible i{outline:1px solid var(--ui);outline-offset:2px}
 #start:hover span{transform:translateX(6px)}
 #start:focus-visible{outline:1px solid var(--ui);outline-offset:6px}
 @media (max-width:560px){.dist .num{font-size:40px}.dist small{min-width:0}.hud{padding-inline:16px;gap:12px}#intro{padding-inline:16px}.keys{font-size:15px;row-gap:0}#uiBtn{right:calc(16px + env(safe-area-inset-right,0px))}}
-@media (hover:none){.keys{grid-template-columns:auto;row-gap:4px}.keys b{display:none}.keys i{text-align:right;padding:6px 0}.keys>i{display:none}}
+@media (hover:none){.keys{gap:8px;font-size:19px;align-items:flex-end}.keys .row,.keys b{display:none}button.k{display:flex;justify-content:center;min-width:132px;min-height:46px;padding:0 18px;box-sizing:border-box;border:1px solid var(--rule);background:rgba(10,9,6,.28)}button.k:active{background:rgba(255,255,255,.18)}#uiBtn{font-size:18px;min-height:44px;padding:0 16px;border:1px solid var(--rule);background:rgba(10,9,6,.28);touch-action:manipulation}}
 @media (prefers-reduced-motion:reduce){#intro{transition:none}#start span{transition:none}}
 </style>
 
@@ -863,7 +863,7 @@ keysEl.addEventListener('click', e => { const b = e.target.closest('button[data-
 function renderKeys(){
   const B = (a, k, label, off) => `<button class="k" type="button" data-a="${a}"><b>${k}</b><i class="${off?'off':''}">${label}</i></button>`;
   keysEl.innerHTML =
-    `<b>DRAG</b><i>orbit</i>` + B('reset','O','reset view') + B('shore','N','new shore') +
+    `<div class="row"><b>DRAG</b><i>orbit</i></div>` + B('reset','O','reset view') + B('shore','N','new shore') +
     B('rain','R',`rain ${st.rainTarget?'on':'off'}`, !st.rainTarget) +
     B('sound','M',`sound ${st.muted?'off':'on'}`, st.muted) +
     B('palette','P',`palette · ${PALS[st.pal].en.toLowerCase()}`);
@@ -872,6 +872,8 @@ function renderKeys(){
 /* ---------- 聲音：程序化海浪、風、雨 ---------- */
 let audio = null;
 function resumeAudio(){ if (audio && audio.ac.state !== 'running') audio.ac.resume().catch(() => {}); }
+// iOS 只認 touchend／click 這類手勢，pointerdown 不算：每次放開手指都確認聲音在跑
+['touchend','click','keydown'].forEach(ev => addEventListener(ev, () => { if (st.started) resumeAudio(); }, { capture:true, passive:true }));
 // iOS 靜音鍵開著時 WebAudio 會被歸為鈴聲類而沒聲音：先播一段無聲的 <audio>，把 session 切成媒體播放
 function unlockMedia(){
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
@@ -890,7 +892,12 @@ function startAudio(){
     const len = ac.sampleRate*4, brown = ac.createBuffer(1, len, ac.sampleRate), white = ac.createBuffer(1, len, ac.sampleRate);
     const bd = brown.getChannelData(0), wd = white.getChannelData(0); let last = 0;
     for (let i=0;i<len;i++){ const w = Math.random()*2-1; wd[i] = w; last = (last + 0.02*w)/1.02; bd[i] = last*3.5; }
-    const master = ac.createGain(); master.gain.value = 0.9; master.connect(ac.destination);
+    const master = ac.createGain(); master.gain.value = 0.9;
+    // 手機喇叭放不出 300Hz 以下的低頻：觸控裝置加一層中頻浪聲，並用壓縮器把整體音量拉上來
+    const phone = matchMedia('(hover: none)').matches, boost = phone ? 2.2 : 1;
+    if (phone){ const comp = ac.createDynamicsCompressor(); comp.threshold.value = -30; comp.ratio.value = 4; const mk = ac.createGain(); mk.gain.value = 2.5;
+      master.connect(comp); comp.connect(mk); mk.connect(ac.destination); } else master.connect(ac.destination);
+    const tick = ac.createBufferSource(); tick.buffer = ac.createBuffer(1, 1, ac.sampleRate); tick.connect(ac.destination); tick.start(0);   // iOS：手勢內先播一個樣本解鎖
     const loop = (buf, off) => { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.start(0, off); return s; };
     const surfF = ac.createBiquadFilter(); surfF.type = 'lowpass'; surfF.frequency.value = 500;
     const surfG = ac.createGain(); surfG.gain.value = 0;
@@ -910,8 +917,11 @@ function startAudio(){
     const whF = ac.createBiquadFilter(); whF.type = 'bandpass'; whF.frequency.value = 2500; whF.Q.value = 1.4;
     const whG = ac.createGain(); whG.gain.value = 0;
     loop(white, 2.7).connect(whF); whF.connect(whG); whG.connect(master);
+    const midF = ac.createBiquadFilter(); midF.type = 'bandpass'; midF.frequency.value = 1000; midF.Q.value = 0.5;
+    const midG = ac.createGain(); midG.gain.value = 0;
+    loop(white, 1.9).connect(midF); midF.connect(midG); midG.connect(master);
     master.gain.value = st.muted ? 0 : 0.9;
-    audio = { ac, master, surfF, surfG, hissG, windF, windG, rainG, rumG, white, whF, whG };
+    audio = { ac, master, phone, boost, midG, midF, surfF, surfG, hissG, windF, windG, rainG, rumG, white, whF, whG };
     resumeAudio();
   } catch (err) { audio = null; }
 }
@@ -1163,10 +1173,12 @@ function frame(){
     const near = 1 - smooth(4, 26, Math.abs(st.z - front(st.x, t)));
     const at = audio.ac.currentTime;
     const recK = 1 - Math.min(1, REC/40);   // 退潮時浪聲變遠
-    audio.surfG.gain.setTargetAtTime((0.12 + 0.55*Math.max(0, rate)*(0.4+0.6*near) + 0.08*s0) * (0.25 + 0.75*recK), at, 0.3);
+    const sg = (0.12 + 0.55*Math.max(0, rate)*(0.4+0.6*near) + 0.08*s0) * (0.25 + 0.75*recK);
+    audio.surfG.gain.setTargetAtTime(sg, at, 0.3);
+    if (audio.phone){ audio.midG.gain.setTargetAtTime(sg*1.5, at, 0.3); audio.midF.frequency.setTargetAtTime(700 + 1200*Math.max(0, rate), at, 0.3); }
     audio.surfF.frequency.setTargetAtTime(280 + 900*Math.max(0, rate), at, 0.3);
     audio.hissG.gain.setTargetAtTime(0.05*Math.max(0, -rate)*near, at, 0.4);
-    audio.windG.gain.setTargetAtTime(0.012 + 0.006*Math.sin(t*0.21) + 0.008*r, at, 0.5);
+    audio.windG.gain.setTargetAtTime((0.012 + 0.006*Math.sin(t*0.21) + 0.008*r)*audio.boost, at, 0.5);
     audio.windF.frequency.setTargetAtTime(600 + 250*Math.sin(t*0.13), at, 0.5);
     audio.rainG.gain.setTargetAtTime(0.035*r, at, 0.5);
   }
