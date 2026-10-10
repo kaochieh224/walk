@@ -938,15 +938,57 @@ const CAR_COLS = [0xeeeeea, 0xeeeeea, 0xb9bcbe, 0x2a2b2e, 0x3d4650, 0x9a2a26, 0x
 const headM = glowMat(null, null, 1.6, { color: 0xf2f0e8 }), tailM = glowMat(null, null, 1.2, { color: 0x8a1a16 });
 NIGHT_GLOW.find(g => g[0] === tailM)[0].emissive.set(0xff2a20); headM.emissive.set(0xfff4dc);
 const wheelG = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 10).rotateX(Math.PI/2);
+// 汽車：照使用者給的參考圖，圓潤的現代小車。側面輪廓用曲線畫出來再擠出厚度、倒圓角；車窗是內縮一點的深色玻璃艙，上面蓋車頂
+const CAR_TYPES = {
+  //        車長  車寬   車頭蓋前緣        擋風玻璃底        擋風玻璃頂        車頂尾端          車尾上緣           車尾
+  hatch: { L: 3.9, W: 1.72, nose: [1.9, 0.74], ws0: [0.85, 0.96], ws1: [-0.05, 1.47], rf1: [-1.45, 1.44], rr: [-1.84, 1.0], tail: [-1.96, 0.62] },
+  mpv:   { L: 3.8, W: 1.68, nose: [1.86, 0.8], ws0: [1.3, 1.0],   ws1: [0.4, 1.64],   rf1: [-1.6, 1.62],  rr: [-1.86, 1.02], tail: [-1.92, 0.66] },
+  sedan: { L: 4.5, W: 1.78, nose: [2.22, 0.7], ws0: [1.0, 0.95],  ws1: [0.1, 1.42],   rf1: [-0.95, 1.4],  rr: [-1.65, 1.0], tail: [-2.24, 0.9], deck: true },
+  bubble:{ L: 3.3, W: 1.6,  nose: [1.62, 0.76], ws0: [0.95, 0.98], ws1: [0.15, 1.56], rf1: [-1.1, 1.56], rr: [-1.55, 1.05], tail: [-1.64, 0.7] },
+};
+const CAR_GEO = {};
+function carGeo(type){
+  if (CAR_GEO[type]) return CAR_GEO[type];
+  const T = CAR_TYPES[type], h = T.L/2, V = (x, y) => new THREE.Vector2(x, y), y0 = 0.22;
+  const ext = (shape, depth, bev) => { const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 3, curveSegments: 10 }); g.translate(0, 0, -depth/2); g.computeVertexNormals(); return g; };
+  // 車身下半：底邊平直，車頭從保險桿圓圓地翻上引擎蓋，車尾圓弧收下來
+  const lo = new THREE.Shape(); lo.moveTo(-h + 0.12, y0); lo.lineTo(h - 0.15, y0);
+  lo.splineThru([V(h - 0.02, y0 + 0.18), V(h, (y0 + T.nose[1])/2 + 0.04), V(T.nose[0], T.nose[1]), V((T.nose[0] + T.ws0[0])/2, (T.nose[1] + T.ws0[1])/2 + 0.04), V(T.ws0[0], T.ws0[1])]);
+  if (T.deck){ lo.lineTo(T.rr[0], T.rr[1]); lo.splineThru([V(T.tail[0] + 0.05, T.tail[1] + 0.02), V(-h, (y0 + T.tail[1])/2 + 0.05), V(-h + 0.12, y0)]); }
+  else { lo.lineTo(T.rr[0], T.rr[1] - 0.04); lo.splineThru([V(T.tail[0], T.tail[1]), V(-h + 0.02, y0 + 0.16), V(-h + 0.12, y0)]); }
+  // 車窗玻璃艙：擋風玻璃斜上去，車頂一道弧線，掀背車尾斜斜下來
+  const gh = new THREE.Shape(); gh.moveTo(T.ws0[0] - 0.02, T.ws0[1] - 0.04);
+  gh.splineThru([V((T.ws0[0] + T.ws1[0])/2 - 0.03, (T.ws0[1] + T.ws1[1])/2 + 0.03), V(T.ws1[0], T.ws1[1])]);
+  gh.splineThru([V((T.ws1[0] + T.rf1[0])/2, Math.max(T.ws1[1], T.rf1[1]) + 0.03), V(T.rf1[0], T.rf1[1])]);
+  gh.splineThru([V((T.rf1[0] + T.rr[0])/2 - 0.03, (T.rf1[1] + T.rr[1])/2 + 0.02), V(T.rr[0] + 0.02, T.rr[1] - 0.04)]); gh.closePath();
+  // 車頂：沿著車頂弧線的一片薄殼
+  const rf = new THREE.Shape(); const a = V(T.ws1[0] - 0.08, T.ws1[1] - 0.06), m = V((T.ws1[0] + T.rf1[0])/2, Math.max(T.ws1[1], T.rf1[1]) + 0.03), e = V(T.rf1[0] + 0.03, T.rf1[1] - 0.06);
+  rf.moveTo(a.x, a.y); rf.splineThru([V(a.x - 0.02, a.y + 0.08), V(m.x, m.y + 0.06), V(e.x - 0.04, e.y + 0.08), e]); rf.lineTo(e.x + 0.02, e.y - 0.02); rf.splineThru([V(m.x, m.y - 0.02), V(a.x + 0.03, a.y - 0.02)]); rf.closePath();
+  return CAR_GEO[type] = { lo: ext(lo, T.W - 0.16, 0.08), gh: ext(gh, T.W - 0.3, 0.06), rf: ext(rf, T.W - 0.22, 0.05) };
+}
+const hubM = std(0x8c9092, { roughness: 0.4, metalness: 0.5 }), trimM = std(0x2e3033, { roughness: 0.7 });
 function makeCar(col){
-  const g = new THREE.Group(), body = std(col, { roughness: 0.4, metalness: 0.3 });
-  const b = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.72, 1.76), body); b.position.y = 0.62; b.castShadow = true; g.add(b);
-  const c = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.6, 1.6), M.glassCar); c.position.set(-0.2, 1.25, 0); c.castShadow = true; g.add(c);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.06, 1.55), body); roof.position.set(-0.25, 1.57, 0); g.add(roof);
-  for (const [x, z] of [[1.35, 0.8], [1.35, -0.8], [-1.35, 0.8], [-1.35, -0.8]]){ const w = new THREE.Mesh(wheelG, M.dark); w.position.set(x, 0.3, z); g.add(w); }
-  for (const z of [0.6, -0.6]){ const h = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.3), headM); h.position.set(2.16, 0.72, z); g.add(h); const t = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.32), tailM); t.position.set(-2.16, 0.78, z); g.add(t); }
-  if (col === 0xf2c21b){ const s = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.15), std(0xf6f4ea)); s.position.set(-0.2, 1.69, 0); g.add(s); }   // 計程車的車頂燈
-  return { g, len: 4.4, kind: 'car' };
+  const type = col === 0xf2c21b ? 'sedan' : pick(['hatch', 'hatch', 'mpv', 'mpv', 'sedan', 'bubble']), T = CAR_TYPES[type], G = carGeo(type), h = T.L/2;
+  const g = new THREE.Group(), body = std(col, { roughness: 0.35, metalness: 0.25, flatShading: false });
+  const lo = new THREE.Mesh(G.lo, body); lo.castShadow = true; g.add(lo);
+  const gh = new THREE.Mesh(G.gh, M.glassCar); gh.castShadow = true; g.add(gh);
+  const rf = new THREE.Mesh(G.rf, body); rf.castShadow = true; g.add(rf);
+  // 中柱、下方黑色飾條、保險桿下緣
+  const bp = new THREE.Mesh(new THREE.BoxGeometry(0.1, (T.ws1[1] + T.rf1[1])/2 - T.ws0[1] + 0.02, T.W - 0.26), body); bp.position.set((T.ws1[0] + T.rf1[0])/2 + 0.15, (T.ws0[1] + (T.ws1[1] + T.rf1[1])/2)/2, 0); g.add(bp);
+  const sk = new THREE.Mesh(new THREE.BoxGeometry(T.L - 1.0, 0.1, T.W - 0.02), trimM); sk.position.set(0, 0.27, 0); g.add(sk);
+  const wx = h - (type === 'sedan' ? 0.85 : 0.72);
+  for (const [x, z] of [[wx, 1], [wx, -1], [-wx + 0.05, 1], [-wx + 0.05, -1]]){
+    const w = new THREE.Mesh(wheelG, M.dark); w.position.set(x, 0.3, z*(T.W/2 - 0.1)); g.add(w);
+    const hc = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.03, 10).rotateX(Math.PI/2), hubM); hc.position.set(x, 0.3, z*(T.W/2 - 0.0)); g.add(hc);
+  }
+  // 車燈：車頭兩顆扁圓的大燈、車尾兩條燈
+  for (const z of [1, -1]){
+    const hl = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 6), headM); hl.scale.set(0.45, 0.5, 1); hl.position.set(T.nose[0] + 0.02, T.nose[1] - 0.14, z*(T.W/2 - 0.3)); g.add(hl);
+    const tl = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), tailM); tl.scale.set(0.35, 0.7, 1); tl.position.set(T.tail[0] - 0.01, T.tail[1] - 0.05, z*(T.W/2 - 0.22)); g.add(tl);
+  }
+  const gr = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, T.W*0.4), trimM); gr.position.set(h - 0.02, 0.45, 0); g.add(gr);   // 進氣口
+  if (col === 0xf2c21b){ const sg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.15), std(0xf6f4ea)); sg.position.set((T.ws1[0] + T.rf1[0])/2, Math.max(T.ws1[1], T.rf1[1]) + 0.16, 0); g.add(sg); }   // 計程車的車頂燈
+  return { g, len: T.L + 0.1, kind: 'car' };
 }
 const RIDER = [0x3a3a3c, 0x2a4a7a, 0xe8e6e0, 0x8a2a2a, 0x5a6a4a, 0xd9c08a], HELM = [0xf2f0ea, 0xd23a2a, 0x2a2a2c, 0x3a7ad6, 0xf2c21b, 0xe88aa0], PONCHO = [0x2a6ad6, 0xe8c23a, 0xd23a2a, 0x3aa86a, 0x9a4ac8, 0xf2f0ea];
 function makeScooter(){
@@ -1260,7 +1302,7 @@ function sunAt(h){
 /* ---------- 狀態與操作 ---------- */
 const st = { started:false, uiOn:true, muted:false, hour: 15.2, hourT: null, rain: 0, rainT: 0, nextRain: 140 + R()*120, rainUntil: 0, flash: 0, nextFlash: 12, sig: 0, cloud: 1 };
 const DAY_LEN = 3600;   // 一天 60 分鐘
-const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
+const look = { near: 0, nearT: 0, yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
 const clampLook = () => { look.yawT = clamp(look.yawT, HOME.yaw - YAW_SPAN, HOME.yaw + YAW_SPAN); look.pitchT = clamp(look.pitchT, PITCH_MIN, PITCH_MAX); };
 
 const KEYMAP = { m:'sound', r:'rain', t:'time', o:'reset', '0':'reset', h:'ui' };
@@ -1268,7 +1310,7 @@ const ACT = {
   sound(){ st.muted = !st.muted; if (audio) audio.master.gain.value = st.muted ? 0 : 0.9; resumeAudio(); renderKeys(); },
   rain(){ if (st.rainT > 0.5){ st.rainT = 0; st.rainUntil = 0; st.nextRain = tNow + 240 + R()*200; } else { st.rainT = 1; st.rainUntil = tNow + 100 + R()*80; } renderKeys(); },
   time(){ const marks = [6.2, 9, 15.2, 17.6, 18.6, 21]; const h = st.hour % 24; const nx = marks.find(m => m > h + 0.3) ?? marks[0] + 24; st.hourT = { from: st.hour, to: st.hour + (nx - h), t0: tNow }; },
-  reset(){ look.yawT = HOME.yaw; look.pitchT = HOME.pitch; look.ret = null; },
+  reset(){ look.yawT = HOME.yaw; look.pitchT = HOME.pitch; look.ret = null; look.nearT = 0; },
   ui(){ setUI(!st.uiOn); },
 };
 let tNow = 0;
@@ -1290,7 +1332,12 @@ canvas.addEventListener('pointerdown', e => { if (!st.started) return; resumeAud
   if (e.pointerType === 'touch'){ const now = performance.now(); if (drag.size) lastTap = 0; else { if (now - lastTap < 300) ACT.reset(); lastTap = now; } }
   drag.set(e.pointerId, { x:e.clientX, y:e.clientY }); canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', e => {
-  const d = drag.get(e.pointerId); if (!d || drag.size > 1) return;
+  const d = drag.get(e.pointerId); if (!d) return;
+  if (drag.size === 2){   // 雙指捏開：往窗邊靠近；捏合：退回椅子
+    const [a, b] = [...drag.values()], d0 = Math.hypot(a.x - b.x, a.y - b.y); d.x = e.clientX; d.y = e.clientY;
+    const d1 = Math.hypot(a.x - b.x, a.y - b.y); look.nearT = clamp(look.nearT + (d1 - d0)/Math.max(innerHeight, 1)*1.6, 0, 1); return;
+  }
+  if (drag.size > 1) return;
   const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
   const k = THREE.MathUtils.degToRad(camera.fov) / Math.max(innerHeight, 1) * 1.1;
   look.yawT += dx*k; look.pitchT += dy*k; look.lastIn = performance.now(); look.ret = null; clampLook();
@@ -1298,6 +1345,8 @@ canvas.addEventListener('pointermove', e => {
 const up = e => drag.delete(e.pointerId);
 canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('dblclick', () => ACT.reset());
+// 滾輪往前滾：身體往前湊到窗台邊、往右邊開著的那半扇窗靠；往後滾退回椅子
+canvas.addEventListener('wheel', e => { if (!st.started) return; e.preventDefault(); const dy = e.deltaMode === 1 ? e.deltaY*30 : e.deltaY; look.nearT = clamp(look.nearT - dy*0.0012, 0, 1); }, { passive: false });
 
 const keysEl = document.getElementById('keys');
 keysEl.addEventListener('click', e => { const b = e.target.closest('button[data-a]'); if (b && ACT[b.dataset.a]) ACT[b.dataset.a](); });
@@ -2065,9 +2114,13 @@ function frame(now){
   }
   const lk = 1 - Math.exp(-dt*8);
   look.yaw += (look.yawT - look.yaw)*lk; look.pitch += (look.pitchT - look.pitch)*lk;
-  const lean = ss(-look.pitch, 0.12, 0.7);
+  look.near += (look.nearT - look.near)*(1 - Math.exp(-dt*3));
+  const nr = look.near, ne = nr*nr*(3 - 2*nr);
+  const lean = ss(-look.pitch, 0.12, 0.7)*(1 - 0.6*ne);
   const br = Math.sin(t*Math.PI*2/5);
-  camera.position.set(EYE.x - Math.sin(look.yaw)*0.25*lean, EYE.y + 0.25*lean + br*0.004, EYE.z - 0.55*lean);
+  // 靠近時的眼睛位置：窗台前緣上方、開著的右半扇窗正前方
+  const ex = lerp(EYE.x, 0.62, ne), ey = lerp(EYE.y, 1.3, ne), ez = lerp(EYE.z, 0.42, ne);
+  camera.position.set(ex - Math.sin(look.yaw)*0.25*lean, ey + 0.25*lean + br*0.004, ez - 0.55*lean);
   camera.rotation.set(look.pitch + br*0.002, look.yaw, 0);
   camera.updateMatrixWorld();
 
