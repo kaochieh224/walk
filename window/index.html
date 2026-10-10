@@ -1164,10 +1164,10 @@ function poseBird(b, t, dt, flapK, fold){
 const faceVel = (b, k) => { const hv = Math.hypot(b.v.x, b.v.z); if (hv > 0.05) b.yaw = lerpAng(b.yaw, Math.atan2(-b.v.z, b.v.x), k); b.pitch = clamp(Math.atan2(b.v.y, Math.max(hv, 0.01))*0.7, -0.7, 0.7); };
 // 電線上的一群麻雀
 
-const FLOCK = { birds: [], state: 'perched', timer: 30, tt: R()*100, cx: 0 };
+const FLOCK = { birds: [], state: 'perched', timer: 30, tt: R()*100, cx: 0, n: 7 };
 // 地上的鴿子、窗前榕樹裡的白頭翁、街上飛的燕子、偶爾飛過高空的白鷺鷥
 const PIGEONS = [], BULBULS = [], SWALLOWS = [];
-const EGRET = { b: null, active: false, next: 60 + R()*90 };
+const EGRET = { b: null, active: false, next: 150 + R()*150 };
 
 { const m = new THREE.Mesh(mergeGeometries(DETAIL), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true })); m.castShadow = m.receiveShadow = true; scene.add(m);
   const am = glowMat(null, null, 1.6, { color: 0xdedcd4 }); am.emissive.set(0xfff2dc); scene.add(new THREE.Mesh(mergeGeometries(ARC_G), am)); }
@@ -1232,7 +1232,7 @@ function sunAt(h){
 
 /* ---------- 狀態與操作 ---------- */
 const st = { started:false, uiOn:true, muted:false, hour: 15.2, hourT: null, rain: 0, rainT: 0, nextRain: 140 + R()*120, rainUntil: 0, flash: 0, nextFlash: 12, sig: 0, cloud: 1 };
-const DAY_LEN = 1200;   // 一天 20 分鐘
+const DAY_LEN = 3600;   // 一天 60 分鐘
 const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
 const clampLook = () => { look.yawT = clamp(look.yawT, HOME.yaw - YAW_SPAN, HOME.yaw + YAW_SPAN); look.pitchT = clamp(look.pitchT, PITCH_MIN, PITCH_MAX); };
 
@@ -1752,14 +1752,23 @@ for (const b of SWALLOWS){ b.g.scale.setScalar(2.4); b.p.set((R()-0.5)*50, GROUN
 function updateFarBirds(t, dt){
   const night = SKY.night, rain = st.rain, day = night < 0.5;
   FLOCK.tt += dt;
-  const vis = night < 0.65 && rain < 0.6;
-  const C = _v1.set(4 + 26*Math.sin(FLOCK.tt*0.07), GROUND + 7.2 + 1.6*Math.sin(FLOCK.tt*0.11), -15 + 3*Math.sin(FLOCK.tt*0.09 + 1));
+  // 鳥群偶爾才飛過一次：從一側進來、橫越街道、從另一側離開，之後隔 1.5–4 分鐘再來
+  const P = FLOCK.pass || (FLOCK.pass = { on: false, next: 25 + R()*35, dir: 1, x: 0 });
+  if (!P.on && t > P.next && night < 0.65 && rain < 0.6){
+    P.on = true; P.dir = R() < 0.5 ? 1 : -1; P.x = -48*P.dir; const y0 = GROUND + 7 + R()*3, z0 = -14 - R()*6;
+    for (const b of FLOCK.birds){ b.p.set(P.x - P.dir*R()*8, y0 + (R()-0.5)*2, z0 + (R()-0.5)*3); b.v.set(7*P.dir, 0, 0); }
+  }
+  for (let i = 0; i < FLOCK.birds.length; i++) FLOCK.birds[i].g.visible = P.on && i < FLOCK.n;
+  if (!P.on) { updateSwallowsEgret(t, dt, night, rain, day); return; }
+  P.x += 7*P.dir*dt;
+  if (Math.abs(P.x) > 55){ P.on = false; P.next = t + 90 + R()*150; }
+  const C = _v1.set(P.x, GROUND + 8 + 1.6*Math.sin(FLOCK.tt*0.11), -16 + 3*Math.sin(FLOCK.tt*0.09 + 1));
   const spread = 1 + 0.8*Math.max(0, Math.sin(FLOCK.tt*0.13));   // 鳥群一下收緊一下散開
-  for (const b of FLOCK.birds){
-    b.g.visible = vis;
+  for (let i = 0; i < FLOCK.n; i++){
+    const b = FLOCK.birds[i];
     const acc = _v2.copy(C).sub(b.p).multiplyScalar(0.45);
     let n = 0; _v3.set(0, 0, 0);
-    for (const o of FLOCK.birds){ if (o === b) continue; const d2 = b.p.distanceToSquared(o.p); if (d2 < 4*spread){ acc.addScaledVector(_lA.copy(b.p).sub(o.p), 2.2*spread/(d2 + 0.1)); } if (d2 < 36){ _v3.add(o.v); n++; } }
+    for (let j = 0; j < FLOCK.n; j++){ const o = FLOCK.birds[j]; if (o === b) continue; const d2 = b.p.distanceToSquared(o.p); if (d2 < 4*spread){ acc.addScaledVector(_lA.copy(b.p).sub(o.p), 2.2*spread/(d2 + 0.1)); } if (d2 < 36){ _v3.add(o.v); n++; } }
     if (n) acc.addScaledVector(_v3.multiplyScalar(1/n).sub(b.v), 0.8);
     acc.x += Math.sin(t*1.3 + b.seed)*1.5; acc.y += Math.sin(t*1.1 + b.seed*2)*1.2;
     b.v.addScaledVector(acc, dt);
@@ -1769,8 +1778,16 @@ function updateFarBirds(t, dt){
     const burst = Math.sin(t*2.2 + b.seed) > -0.3;
     poseBird(b, t, dt, burst ? 1 : 0, burst ? 0 : 0.6);
   }
-  for (const b of SWALLOWS){
-    b.g.visible = day && rain < 0.3;
+  updateSwallowsEgret(t, dt, night, rain, day);
+}
+// 燕子：一兩隻，偶爾來繞一陣子就走
+const SWT = { on: false, next: 50 + R()*60, until: 0 };
+function updateSwallowsEgret(t, dt, night, rain, day){
+  if (!SWT.on && t > SWT.next && day && rain < 0.3){ SWT.on = true; SWT.until = t + 15 + R()*20; SWT.k = R() < 0.6 ? 1 : 2; SWALLOWS.forEach((b, i) => { b.p.set((i % 2 ? 1 : -1)*40, GROUND + 6 + R()*3, -12 - R()*6); b.tgt.set((R()-0.5)*30, GROUND + 6, -14); }); }
+  if (SWT.on && t > SWT.until){ SWT.on = false; SWT.next = t + 120 + R()*180; }
+  for (let i = 0; i < SWALLOWS.length; i++){
+    const b = SWALLOWS[i];
+    b.g.visible = SWT.on && i < SWT.k && day && rain < 0.3;
     if (!b.g.visible) continue;
     if (b.p.distanceTo(b.tgt) < 3 || R() < dt*0.25) b.tgt.set((R()-0.5)*60, GROUND + 4.5 + R()*4, -11 - R()*9);
     const want = _v2.copy(b.tgt).sub(b.p).normalize().multiplyScalar(11);
@@ -1784,7 +1801,7 @@ function updateFarBirds(t, dt){
   if (E.active){
     const b = E.b; b.p.addScaledVector(b.v, dt); b.p.y += Math.sin(t*0.4)*0.02; faceVel(b, 1);
     const flap = (t % 5) < 3; poseBird(b, t, dt, flap ? 1 : 0, 0);
-    if (Math.abs(b.p.x) > 175){ E.active = false; b.g.visible = false; E.next = t + 120 + R()*180; }
+    if (Math.abs(b.p.x) > 175){ E.active = false; b.g.visible = false; E.next = t + 240 + R()*300; }
   }
 }
 function updateBirds(t, dt){
@@ -1957,8 +1974,8 @@ function frame(now){
   const dt = clamp((now - last)/1000, 0, 0.05); last = now;
   const t = (now - T0)/1000; tNow = t;
 
-  // 時間：一天 20 分鐘；「later」用 4 秒快轉到下一個時段
-  if (st.hourT){ const u = Math.min(1, (t - st.hourT.t0)/4), e = 0.5 - 0.5*Math.cos(Math.PI*u); st.hour = lerp(st.hourT.from, st.hourT.to, e); if (u >= 1) st.hourT = null; }
+  // 時間：一天 60 分鐘；「later」用 8 秒快轉到下一個時段
+  if (st.hourT){ const u = Math.min(1, (t - st.hourT.t0)/8), e = 0.5 - 0.5*Math.cos(Math.PI*u); st.hour = lerp(st.hourT.from, st.hourT.to, e); if (u >= 1) st.hourT = null; }
   else st.hour += dt * 24 / DAY_LEN;
   const hh = st.hour % 24;
   skyAt(hh); sunAt(hh);
