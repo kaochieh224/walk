@@ -229,6 +229,25 @@ const AWN = new THREE.Group(); AWN.position.set(-0.675, WIN.y1 - 0.06, FZ - 0.02
   }
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.015, 0.22), M.aluDark); arm.position.set(0.5, -h + 0.05, 0.1); arm.rotation.x = 0.4; AWN.add(arm);   // 撐桿
 }
+// 外層鐵窗：窗外凸出一個大鐵籠，方管粗、間距寬（直料約半米一支），深灰漆；底下兩根橫桿可放盆栽
+{
+  const IR = std(0x34363a, { roughness: 0.6, metalness: 0.35 });
+  const z0 = -0.34, z1 = -0.88, zc = (z0 + z1)/2, dz = z0 - z1;
+  const x0 = WIN.x0 - 0.12, x1 = WIN.x1 + 0.12, y0 = WIN.y0 - 0.12, y1 = WIN.y1 + 0.12, t = 0.05;
+  const W = x1 - x0, H = y1 - y0, ym = (y0 + y1)/2;
+  // 外框：正面四邊、側面上下、四根角柱
+  box(W, t, t, IR, 0, y0, z1); box(W, t, t, IR, 0, y1, z1);
+  for (const x of [x0, x1]){ box(t, H, t, IR, x, ym, z1); box(t, t, dz, IR, x, y0, zc); box(t, t, dz, IR, x, y1, zc); box(t*0.8, H, t*0.8, IR, x, ym, z0 + 0.02); }
+  // 正面直料：間距寬
+  const n = 10; for (let i = 1; i < n; i++) box(0.035, H, 0.035, IR, x0 + W*i/n, ym, z1);
+  // 正面兩道橫料（一高一低），側面一道
+  for (const y of [y0 + H*0.36, y0 + H*0.72]){ box(W, 0.035, 0.035, IR, 0, y, z1); for (const x of [x0, x1]) box(0.035, 0.035, dz, IR, x, y, zc); }
+  // 側面直料
+  for (const x of [x0, x1]) box(0.035, H, 0.035, IR, x, ym, zc);
+  // 底部放盆栽的橫桿、上緣幾根往牆裡固定的支架
+  for (const z of [z0 - 0.15, z1 + 0.12]) box(W, 0.03, 0.03, IR, 0, y0 + 0.02, z);
+  for (let i = 0; i <= 4; i++) box(0.035, 0.035, dz, IR, x0 + W*i/4, y1, zc);
+}
 // 窗外的鐵皮雨遮（依使用者照片）：從牆面斜斜伸出去，下雨時邊緣滴水
 const AWNING = { z: -1.35, y: 3.05 };
 {
@@ -722,7 +741,7 @@ function tree(o){
     for (let k = 0; k < n; k++){
       const a = R()*Math.PI*2, b = Math.acos(2*R() - 1), r = cr * Math.pow(R(), 0.35);
       const p = new THREE.Vector3(Math.sin(b)*Math.cos(a)*r*1.25, Math.cos(b)*r*(type === 'dome' ? 0.75 : 0.85), Math.sin(b)*Math.sin(a)*r*1.25).add(c);
-      if (p.z > -0.9) p.z = -0.9 - R()*0.6;   // 不要長進屋裡（雨遮外緣在 -1.35）
+      if (p.z > -1.0) p.z = -1.0 - R()*0.5;   // 不要長進屋裡（雨遮外緣在 -1.35）
       if (type === 'dome' && p.y < cc.y - o.ry*0.35) p.y = cc.y - o.ry*0.35 + R()*0.15;   // 修剪成傘形，下緣平
       const top = clamp((p.y - (cc.y - o.ry*0.6)) / (o.ry*1.4), 0, 1);
       _c.copy(pick(cols)).multiplyScalar(0.8 + 0.4*top + (R()-0.5)*0.15);
