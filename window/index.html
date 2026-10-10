@@ -377,6 +377,26 @@ const walkMat = (rx, rz) => { const t = brickTex.clone(); t.needsUpdate = true; 
 }
 
 const HILL = new THREE.MeshBasicMaterial({ color: 0x6f8a78, fog: false });   // 遠山：不吃霧，每格用天色調成淡淡的藍綠
+// 立面與街上的立體細節（陽台、外推鐵窗、冷氣、雨遮、花台…）：全部合併成一個帶頂點色的 mesh，影子和層次才出得來
+const DETAIL = [], ARC_G = [];
+const _dc = new THREE.Color();
+function dbox(w, h, d, x, y, z, col, rx = 0, list = DETAIL){
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (rx) g.rotateX(rx);
+  g.translate(x, y, z);
+  _dc.set(col); const n = g.attributes.position.count, c = new Float32Array(n*3);
+  for (let i = 0; i < n; i++){ const k = 0.94 + 0.12*R(); c[i*3] = _dc.r*k; c[i*3+1] = _dc.g*k; c[i*3+2] = _dc.b*k; }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3)); list.push(g);
+}
+function lightBoxTex(){
+  const [cv, g] = mkCanvas(10, 32);
+  const bg = pick(['#f6f2e6', '#c8302a', '#1f5fa8', '#f2c21b', '#2f8a4a']);
+  g.fillStyle = bg; g.fillRect(0, 0, 10, 32);
+  g.fillStyle = bg === '#f6f2e6' || bg === '#f2c21b' ? '#c8302a' : '#ffffff';
+  for (let y = 3; y < 29; y += 7){ g.fillRect(2, y, 6, 2); g.fillRect(4, y - 1, 2, 5); }
+  return canvasTex(cv);
+}
+const WIRES = [], PERCH_TREE = [], PARKED = [];   // 電線（鳥停的地方）、樹裡讓白頭翁停的點、對面停的機車（貓睡的座墊）
 /* ---------- 對面的街屋：四到七層，一樓騎樓，磁磚外牆、鐵窗、冷氣、陽台晾衣、直立招牌、頂樓水塔和加蓋 ---------- */
 const TILE = ['#cfc8b8', '#bdb6a6', '#d9d4c8', '#a9a8a2', '#c7b8a0', '#b3b9b8', '#d2c3b2', '#9ea7a6', '#c9b49a'];
 function facadeTex(floors, bays, base){
@@ -489,6 +509,35 @@ function building(x0, x1, zFront, depth, floors, face = 'pz'){
       s.castShadow = true;
     }
   }
+  // 立面凸出物：陽台（樓板＋欄杆）、外推鐵窗＋塑膠雨遮、冷氣與托架。沿立面 u、往街道凸出 out
+  const fp = (u, y, out, a, h, d, col, tilt = 0) => {
+    if (face === 'pz') dbox(a, h, d, x0 + u, y, zFront + out, col, tilt);
+    else { const sg = face === 'px' ? 1 : -1; dbox(d, h, a, zFront + sg*out, y, x0 + u, col); }
+  };
+  {
+    const rows = floors - 1, rh = (H - FL)/rows, bw = w/bays;
+    const railC = pick([0xd9d6ce, 0xb9b6ae, 0x8a8f90, 0xc9c1b0]), grill = pick([0xd8d8d2, 0x6a4a3a, 0x4f6a5a, 0x8a9092, 0xe8e8e2]);
+    for (let f = 0; f < rows; f++){
+      const y0 = GROUND + FL + f*rh;
+      for (let b = 0; b < bays; b++){
+        const u0 = b*bw, r = R();
+        if (r < 0.22){
+          fp(u0 + bw/2, y0 + 0.06, 0.45, bw - 0.25, 0.12, 0.9, 0x9a978f);
+          fp(u0 + bw/2, y0 + 0.62, 0.88, bw - 0.25, 1.0, 0.07, railC);
+          if (R() < 0.6) fp(u0 + 0.5 + R()*(bw - 1), y0 + 0.4, 0.7, 0.35, 0.4, 0.3, pick([0x4f8a3a, 0x3a6a2a, 0xb7643f]));   // 盆栽
+        } else if (r < 0.52){
+          fp(u0 + bw/2, y0 + 1.6, 0.22, bw*0.72, 1.6, 0.44, grill);
+          if (R() < 0.7) fp(u0 + bw/2, y0 + 2.5, 0.32, bw*0.82, 0.05, 0.62, pick([0x3f7a5a, 0x2f5f8a, 0xd9d9d2, 0x7a8a3a]), face === 'pz' ? 0.35 : 0);
+        }
+        if (R() < 0.35){ const uu = u0 + (R() < 0.5 ? 0.45 : bw - 0.45); fp(uu, y0 + 0.42, 0.28, 0.75, 0.55, 0.42, 0xe4e4de); fp(uu, y0 + 0.12, 0.24, 0.7, 0.04, 0.42, 0x6a6a68); }
+      }
+    }
+    // 騎樓：天花板一排燈（夜裡亮）、垂直於街道的燈箱招牌
+    if (face === 'pz'){
+      for (let x = x0 + bw/2; x < x1; x += bw) dbox(0.9, 0.05, 0.25, x, GROUND + FL - 0.03, zFront - 1.6, 0xffffff, 0, ARC_G);
+      if (R() < 0.8){ const t = lightBoxTex(), lb = box(0.14, 0.5, 1.0, glowMat(t, t, 1.3), x0 + 0.6 + R()*(w - 1.2), GROUND + FL - 0.45, zFront - 0.9); lb.castShadow = false; }
+    }
+  }
   return { upper, lower, H };
 }
 {
@@ -531,7 +580,7 @@ const LAMPS = [];
   for (const [x, z] of poles){ poleAt(x, z, 9.5); box(1.8, 0.1, 0.1, M.pole, x, GROUND + 8.9, z); box(1.4, 0.1, 0.1, M.pole, x, GROUND + 8.2, z); }
   const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 1.0, 10), std(0x8a9290)); tr.position.set(-5.2, GROUND + 7.2, -3.25); tr.castShadow = true; scene.add(tr);
   const pts = [];
-  const wire = (a, b, sag) => { const n = 18; for (let i = 0; i < n; i++){ for (const k of [i, i+1]){ const u = k/n; pts.push(lerp(a.x, b.x, u), lerp(a.y, b.y, u) - Math.sin(u*Math.PI)*sag, lerp(a.z, b.z, u)); } } };
+  const wire = (a, b, sag) => { WIRES.push({ a: a.clone(), b: b.clone(), sag }); const n = 18; for (let i = 0; i < n; i++){ for (const k of [i, i+1]){ const u = k/n; pts.push(lerp(a.x, b.x, u), lerp(a.y, b.y, u) - Math.sin(u*Math.PI)*sag, lerp(a.z, b.z, u)); } } };
   for (const [dy, dz] of [[8.9, -0.8], [8.9, 0.8], [8.2, -0.6], [8.2, 0.6], [7.6, 0]]){
     for (const zp of [-3.6, -13.5]){
       const xs = [-60, -36, -5.2, 26, 60];
@@ -575,19 +624,44 @@ const LAMPS = [];
   box(0.25, 1.0, 0.06, std(0x1f7a4a), XST.x1 + 0.45, GROUND + 3.4, ROAD1 - 0.4);
   // 對面騎樓前停的一排機車、路邊停的車
   const scootC = [0xdcdad4, 0x2a2a2c, 0x8a3a34, 0x4a6a8a, 0x9aa0a2, 0xc9b88a, 0x5a7a6a, 0x3a3a3c];
+  // 停著的機車：輪子、後車身、座墊、腳踏板、前擋、龍頭、後照鏡；車頭朝馬路
+  function parkedScooter(x, y, z, s, col){
+    for (const k of [0.62, -0.62]) dbox(0.11, 0.36, 0.36, x, y + 0.18, z + s*k, 0x1e1e20);
+    dbox(0.34, 0.42, 0.78, x, y + 0.5, z - s*0.3, col); dbox(0.3, 0.1, 0.66, x, y + 0.76, z - s*0.25, 0x262628);
+    dbox(0.3, 0.1, 0.42, x, y + 0.28, z + s*0.22, col); dbox(0.34, 0.72, 0.16, x, y + 0.62, z + s*0.5, col);
+    dbox(0.62, 0.05, 0.06, x, y + 1.0, z + s*0.52, 0x262628); dbox(0.2, 0.15, 0.16, x, y + 0.96, z + s*0.6, col);
+    for (const k of [-0.24, 0.24]) dbox(0.07, 0.05, 0.02, x + k, y + 1.16, z + s*0.5, 0x262628);
+  }
   const sg = mergeGeometries([new THREE.BoxGeometry(0.36, 0.38, 1.5).translate(0, -0.08, 0), new THREE.BoxGeometry(0.3, 0.14, 0.62).translate(0, 0.17, -0.2), new THREE.BoxGeometry(0.32, 0.55, 0.12).translate(0, 0.1, 0.62)]);   // 車身、座墊、前擋
   for (let x = -70; x < 70; x += 0.62 + R()*0.3){
     if (x > XST.x0 - 1.5 && x < XST.x1 + 0.5) continue;
     if (R() < 0.18) continue;
-    const s = new THREE.Mesh(sg, std(pick(scootC))); s.position.set(x, GROUND + 0.15 + 0.4, ROAD1 - 1.2); s.rotation.y = (R()-0.5)*0.15; s.castShadow = true; scene.add(s);
+    parkedScooter(x, GROUND + 0.15, ROAD1 - 1.2, 1, pick(scootC)); PARKED.push({ x, z: ROAD1 - 1.2 - 0.25, y: GROUND + 0.15 + 0.81 });
   }
   for (let x = -70; x < 70; x += 0.62 + R()*0.35){   // 近側停車帶也停滿機車（俯身才看得到）
     if (x > ZEBRA.x0 - 2 && x < XST.x1 + 1) continue;
     if (R() < 0.25) continue;
-    const s = new THREE.Mesh(sg, std(pick(scootC))); s.position.set(x, GROUND + 0.4, -4.95); s.rotation.y = (R()-0.5)*0.2; s.castShadow = true; scene.add(s);
+    parkedScooter(x, GROUND, -4.85, -1, pick(scootC));
   }
 }
 
+/* ---------- 街道家具：人孔蓋、機車待轉區、消防栓、公車站牌、斑馬線口的矮柱 ---------- */
+{
+  const mh = std(0x4a4a4c, { roughness: 0.6, metalness: 0.4 });
+  for (const [x, z] of [[-9, -7.6], [3.5, -9.6], [-24, -10.4], [16, -7.2], [-15, -11.0]]){ const m = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.02, 14), mh); m.position.set(x, GROUND + 0.012, z); m.receiveShadow = true; scene.add(m); }
+  const bx0 = XST.r0 + 0.4, bx1 = XST.r0 + 3.0, bz0 = -5.5, bz1 = -7.4, mkL = (w, d, x, z) => ground(w, d, M.mark, x, GROUND + 0.012, z);
+  mkL(bx1 - bx0, 0.1, (bx0 + bx1)/2, bz0); mkL(bx1 - bx0, 0.1, (bx0 + bx1)/2, bz1); mkL(0.1, bz0 - bz1, bx0, (bz0 + bz1)/2); mkL(0.1, bz0 - bz1, bx1, (bz0 + bz1)/2);
+  // 消防栓
+  const hy = std(0xc8302a, { roughness: 0.5 }), hx = -3.4, hz = -3.55, hb = GROUND + 0.15;
+  const c1 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.62, 10), hy); c1.position.set(hx, hb + 0.31, hz); c1.castShadow = true; scene.add(c1);
+  const c2 = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 6, 0, Math.PI*2, 0, Math.PI/2), hy); c2.position.set(hx, hb + 0.62, hz); scene.add(c2);
+  box(0.4, 0.09, 0.09, hy, hx, hb + 0.45, hz);
+  // 公車站牌
+  const bp = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.8, 6), M.pole); bp.position.set(-24, GROUND + 0.15 + 1.4, ROAD1 - 0.4); bp.castShadow = true; scene.add(bp);
+  box(0.06, 0.95, 0.55, std(0x1f5fa8), -24, GROUND + 2.45, ROAD1 - 0.4); box(0.065, 0.35, 0.5, std(0xf2f0ea), -24, GROUND + 2.1, ROAD1 - 0.4);
+  // 斑馬線兩端的矮柱
+  for (const z of [ROAD0 + 0.3, ROAD1 - 0.3]) for (const x of [ZEBRA.x0 - 0.5, ZEBRA.x1 + 0.5]){ const b = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.7, 8), std(0xd9d6ce)); b.position.set(x, GROUND + 0.15 + 0.35, z); b.castShadow = true; scene.add(b); box(0.15, 0.08, 0.15, M.yellow, x, GROUND + 0.15 + 0.6, z); }
+}
 /* ---------- 行道樹：所有葉子共用一個 InstancedMesh，在 shader 裡隨風擺動 ---------- */
 const U = { t:{ value: 0 }, wind:{ value: 0.6 } };
 const swayInject = sh => {
@@ -644,6 +718,7 @@ function tree(o){
     const mid = fork.clone().lerp(c, 0.5); mid.y += 0.3;
     limb(BARK, fork, mid, o.trunkR*0.45, o.trunkR*0.26, 6); limb(BARK, mid, c, o.trunkR*0.26, o.trunkR*0.07, 5);
     const n = Math.floor(o.n / nClump), cr = o.clumpR * (0.75 + R()*0.5);
+    if (o.near && c.x > -4 && c.x < 8) PERCH_TREE.push(new THREE.Vector3(c.x + (R()-0.5)*cr, c.y - cr*0.55, Math.min(c.z + cr*0.55, -1.25)));
     for (let k = 0; k < n; k++){
       const a = R()*Math.PI*2, b = Math.acos(2*R() - 1), r = cr * Math.pow(R(), 0.35);
       const p = new THREE.Vector3(Math.sin(b)*Math.cos(a)*r*1.25, Math.cos(b)*r*(type === 'dome' ? 0.75 : 0.85), Math.sin(b)*Math.sin(a)*r*1.25).add(c);
@@ -652,6 +727,17 @@ function tree(o){
       const top = clamp((p.y - (cc.y - o.ry*0.6)) / (o.ry*1.4), 0, 1);
       _c.copy(pick(cols)).multiplyScalar(0.8 + 0.4*top + (R()-0.5)*0.15);
       LEAVES.push([p.x, p.y, p.z, R()*6.28, R()*6.28, R()*6.28, o.leaf*(0.75 + R()*0.5), _c.r, _c.g, _c.b]);
+    }
+  }
+  // 樹下的花台和灌木（依使用者照片）
+  if (o.shrub){
+    const by = GROUND + 0.15;
+    dbox(1.7, 0.28, 1.5, x, by + 0.14, z, 0x9a948a);
+    const sc = ['#3d6a2a', '#4f7a30', '#2f5a24'].map(c => new THREE.Color(c));
+    for (let k = 0; k < (o.near ? 420 : 160); k++){
+      const a = R()*Math.PI*2, r = Math.sqrt(R());
+      _c.copy(pick(sc)).multiplyScalar(0.85 + R()*0.3);
+      LEAVES.push([x + Math.cos(a)*r*0.8, by + 0.3 + R()*0.45*(1 - r*0.6), z + Math.sin(a)*r*0.7, R()*6.28, R()*6.28, R()*6.28, 0.11 + R()*0.06, _c.r, _c.g, _c.b]);
     }
   }
   // 榕樹的氣根：從枝下垂下來的細根，紅褐色（依使用者照片）
@@ -666,17 +752,17 @@ function tree(o){
   }
 }
 // 近側（窗前）三棵：中間偏右一棵大榕樹、左邊一棵修剪成傘形的樹、右邊一棵高大的樹
-tree({ type:'banyan', x:4.6, z:-3.3, trunkH:3.2, trunkR:0.3, crownY:6.4, rx:5.4, ry:2.8, rz:2.4, clumps:12, clumpR:1.6, n:11000, leaf:0.2, lean:-1.2, roots:30 });
-tree({ type:'camphor', x:-2.6, z:-3.0, trunkH:3.4, trunkR:0.2, crownY:6.9, rx:3.6, ry:2.6, rz:2.8, clumps:8, clumpR:1.4, n:5200, leaf:0.2, lean:0.4 });
-tree({ type:'dome', x:-7.6, z:-2.3, trunkH:2.6, trunkR:0.18, crownY:5.2, rx:3.2, ry:1.9, rz:2.6, clumps:8, clumpR:1.4, n:4200, leaf:0.18 });
-tree({ type:'camphor', x:11.5, z:-2.4, trunkH:3.8, trunkR:0.24, crownY:8.4, rx:4.2, ry:3.2, rz:3.2, clumps:8, clumpR:1.8, n:4200, leaf:0.24 });
+tree({ near:true, shrub:true, type:'banyan', x:4.6, z:-3.3, trunkH:3.2, trunkR:0.3, crownY:6.4, rx:5.4, ry:2.8, rz:2.4, clumps:12, clumpR:1.6, n:11000, leaf:0.2, lean:-1.2, roots:30 });
+tree({ near:true, shrub:true, type:'camphor', x:-2.6, z:-3.0, trunkH:3.4, trunkR:0.2, crownY:6.9, rx:3.6, ry:2.6, rz:2.8, clumps:8, clumpR:1.4, n:5200, leaf:0.2, lean:0.4 });
+tree({ near:true, shrub:true, type:'dome', x:-7.6, z:-2.3, trunkH:2.6, trunkR:0.18, crownY:5.2, rx:3.2, ry:1.9, rz:2.6, clumps:8, clumpR:1.4, n:4200, leaf:0.18 });
+tree({ shrub:true, type:'camphor', x:11.5, z:-2.4, trunkH:3.8, trunkR:0.24, crownY:8.4, rx:4.2, ry:3.2, rz:3.2, clumps:8, clumpR:1.8, n:4200, leaf:0.24 });
 tree({ type:'tall', x:-17, z:-2.4, trunkH:3.6, trunkR:0.24, crownY:8.0, rx:4, ry:3, rz:3, clumps:7, clumpR:1.7, n:2400, leaf:0.3 });
 // 對面人行道一排
 for (let x = -72; x < 72; x += 7.5 + R()*2){
   if (x > XST.x0 - 2.5 && x < XST.x1 + 2.5) continue;
   const tp = R() < 0.3 ? 'dome' : R() < 0.5 ? 'banyan' : R() < 0.6 ? 'camphor' : 'tall';
-  if (tp === 'dome') tree({ type:tp, x, z:-14.3, trunkH:2.4, trunkR:0.16, crownY:4.8, rx:2.8, ry:1.7, rz:2.2, clumps:6, clumpR:1.3, n:1100, leaf:0.3 });
-  else tree({ type:tp, x, z:-14.3, trunkH:3.4, trunkR:0.24, crownY:7.6 + R()*1.5, rx:3.8, ry:2.8, rz:2.8, clumps:6, clumpR:1.7, n:1300, leaf:0.36, roots: 8 });
+  if (tp === 'dome') tree({ shrub:true, type:tp, x, z:-14.3, trunkH:2.4, trunkR:0.16, crownY:4.8, rx:2.8, ry:1.7, rz:2.2, clumps:6, clumpR:1.3, n:1100, leaf:0.3 });
+  else tree({ shrub:true, type:tp, x, z:-14.3, trunkH:3.4, trunkR:0.24, crownY:7.6 + R()*1.5, rx:3.8, ry:2.8, rz:2.8, clumps:6, clumpR:1.7, n:1300, leaf:0.36, roots: 8 });
 }
 // 巷口兩棵修剪成傘形的樹（依使用者照片）
 tree({ type:'dome', x:XST.x0 - 0.8, z:-14.3, trunkH:2.4, trunkR:0.17, crownY:4.9, rx:2.7, ry:1.7, rz:2.3, clumps:6, clumpR:1.3, n:1500, leaf:0.28 });
@@ -686,6 +772,7 @@ for (const side of [-1, 1]) for (let z = ROAD1 - 6; z > -150; z -= 8 + R()*2){
   const x = side < 0 ? XST.x0 + 0.9 : XST.x1 - 0.9;
   tree({ type:'tall', x, z, trunkH:3.6, trunkR:0.22, crownY:8.4 + R()*1.5, rx:4.2, ry:3.0, rz:3.4, clumps:6, clumpR:2.0, n:z > -60 ? 900 : 520, leaf: z > -60 ? 0.42 : 0.6, lean: -side*1.7 });
 }
+for (const x of [-1.3, 0.3, 1.7]) PERCH_TREE.push(new THREE.Vector3(x, RH + 0.09, AWNING.z + 0.08));   // 雨遮邊上
 const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, LEAVES.length);
 {
   const P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler(), C = new THREE.Color(), MM = new THREE.Matrix4();
@@ -824,22 +911,208 @@ function spawn(lane, v){
   v.wob = R()*6.28;
   lane.list.push(v);
 }
-// 行人：沿著對面騎樓前走，有的走到斑馬線等綠燈過馬路，再沿著這一側走掉；下雨撐傘
-const PED_C = [0x2a2a2c, 0xe8e6e0, 0x3a5a8a, 0x8a3a3a, 0xc8b89a, 0x5a7a5a, 0xe8b0b8, 0x6a5a8a];
-const UMB = [0x1a1a1c, 0x2a5ab8, 0xd23a3a, 0xf2f0ea, 0xe8c23a, 0x3aa070, 0x8a4ac8];
-function makePed(){
-  const g = new THREE.Group(), cl = std(pick(PED_C)), pants = std(pick([0x2a2a30, 0x3a4a6a, 0x7a6a5a, 0x1a1a1c, 0xd9d4c8]));
-  const legs = [];
-  for (const z of [0.09, -0.09]){ const lg = new THREE.Group(); lg.position.set(0, 0.82, z); const m = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.82, 0.13), pants); m.position.y = -0.41; m.castShadow = true; lg.add(m); g.add(lg); legs.push(lg); }
-  const t = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.6, 0.42), cl); t.position.y = 1.12; t.castShadow = true; g.add(t);
-  const hd = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), std(pick([0x2a1e18, 0x3a2a20, 0x1a1412, 0x6a6a6a]))); hd.position.y = 1.55; g.add(hd);
-  const um = new THREE.Group(); um.position.set(0.05, 1.95, 0.12); um.visible = false; g.add(um);
-  const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.58, 0.28, 8, 1, true), std(pick(UMB), { side: THREE.DoubleSide, roughness: 0.5 })); canopy.castShadow = true; um.add(canopy);
-  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.7, 4), M.dark); stick.position.y = -0.35; um.add(stick);
-  return { g, legs, um, active: false, rainK: R() };
+/* ---------- 人：有關節的身體（骨盆、軀幹、頭、大腿、小腿、腳掌、上臂、前臂、手），用步態曲線驅動。
+   走路時大腿前後擺、小腿在擺盪期彎膝、腳掌蹬地、骨盆上下起伏並左右扭轉、軀幹反向扭、手臂和同側腿反向擺 ---------- */
+const SKIN = [0xe6bf9e, 0xd6a882, 0xc08c66, 0xf0cdb0];
+const HAIR = [0x16110e, 0x221813, 0x2e2119, 0x4a3426];
+const TOPS = [0xf0eee8, 0x2a2a2e, 0x3a5a8a, 0x8a3a3a, 0xc8b89a, 0x5a7a5a, 0xe8b0b8, 0x6a5a8a, 0xe8c23a, 0x7aa6c8, 0xd9d4c6, 0x9a4a3a];
+const BOTTOMS = [0x2a2a30, 0x3a4a6a, 0x5a6a8a, 0x1a1a1c, 0xd9d4c8, 0x6a5a48, 0x8a8a84];
+const UMB = [0x1a1a1c, 0x2a5ab8, 0xd23a3a, 0xf2f0ea, 0xe8c23a, 0x3aa070, 0x8a4ac8, 0x1a1a1c, 0x1a1a1c];
+function part(w, h, d, mat, parent, x, y, z){ const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; }
+function joint(parent, x, y, z){ const j = new THREE.Group(); j.position.set(x, y, z); parent.add(j); return j; }
+function makeHuman(kind = 'adult'){
+  const s = kind === 'kid' ? 0.6 + R()*0.1 : kind === 'elder' ? 0.9 : 0.93 + R()*0.14;
+  const skin = std(pick(SKIN), { flatShading: false }), top = std(pick(TOPS)), bot = std(pick(BOTTOMS)), shoe = std(pick([0x1a1a1c, 0xe8e6e0, 0x5a4a3a, 0x3a3a40]));
+  const hairM = std(kind === 'elder' ? pick([0x8c8a86, 0xcfcdc8, 0x5a5856]) : pick(HAIR));
+  const shorts = kind !== 'elder' && R() < 0.3, sleeves = R() < 0.55, skirt = kind !== 'elder' && !shorts && R() < 0.18;
+  const g = new THREE.Group(); g.scale.setScalar(s);
+  const pelvis = joint(g, 0, 0.92, 0);
+  part(0.2, 0.18, 0.34, bot, pelvis, 0, 0.02, 0);
+  const torso = joint(pelvis, 0, 0.1, 0);
+  part(0.21, 0.46, 0.37, top, torso, 0, 0.23, 0);
+  part(0.07, 0.08, 0.07, skin, torso, 0.01, 0.5, 0);
+  const head = joint(torso, 0.01, 0.63, 0);
+  const hm = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), skin); hm.scale.set(1.08, 1.12, 0.92); hm.castShadow = true; head.add(hm);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.108, 10, 6, 0, Math.PI*2, 0, Math.PI*0.55), hairM); hair.scale.set(1.08, 1.12, 0.95); hair.rotation.z = 0.35; head.add(hair);
+  if (kind !== 'elder' && R() < 0.3) part(0.05, 0.22, 0.19, hairM, head, -0.09, -0.07, 0);   // 長髮
+  const hips = [], knees = [], ankles = [], sh = [], el = [], hands = [];
+  for (const side of [-1, 1]){
+    const hp = joint(pelvis, 0, -0.02, side*0.09); part(0.13, 0.44, 0.13, skirt ? skin : bot, hp, 0, -0.22, 0);
+    const kn = joint(hp, 0, -0.44, 0); part(0.105, 0.42, 0.11, shorts || skirt ? skin : bot, kn, 0, -0.21, 0);
+    const an = joint(kn, 0, -0.42, 0); part(0.24, 0.06, 0.1, shoe, an, 0.05, -0.03, 0);
+    hips.push(hp); knees.push(kn); ankles.push(an);
+    const s0 = joint(torso, 0, 0.42, side*0.225); part(0.09, 0.3, 0.09, top, s0, 0, -0.15, 0);
+    const e0 = joint(s0, 0, -0.3, 0); part(0.08, 0.26, 0.08, sleeves ? skin : top, e0, 0, -0.13, 0);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.042, 6, 5), skin); hand.position.y = -0.29; e0.add(hand);
+    sh.push(s0); el.push(e0); hands.push(hand);
+  }
+  if (skirt){ const sk = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.27, 0.45, 8, 1, true), std(pick(BOTTOMS), { side: THREE.DoubleSide })); sk.position.y = -0.18; sk.castShadow = true; pelvis.add(sk); }
+  // 傘：右手撐著，下雨才出現
+  const um = joint(torso, 0.2, 0.5, 0.17); um.visible = false;
+  const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.52, 0.26, 8, 1, true), std(pick(UMB), { side: THREE.DoubleSide, roughness: 0.5 })); canopy.position.y = 0.68; canopy.castShadow = true; um.add(canopy);
+  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.72, 4), M.dark); stick.position.y = 0.3; um.add(stick);
+  const bag = kind !== 'kid' && R() < 0.45 ? part(0.07, 0.24, 0.28, std(pick([0xe8e6e0, 0x2a2a2c, 0xc8302a, 0x8a6a4a, 0xf2f0ea])), el[0], 0, -0.42, 0) : null;
+  const phone = part(0.07, 0.13, 0.015, std(0x1a1a1c), el[1], 0.05, -0.3, -0.03); phone.visible = false;
+  return { g, s, kind, pelvis, torso, head, hips, knees, ankles, sh, el, hands, um, bag, phone, ph: R()*6.28, amp: 0, yaw: 0, seed: R()*100, rainK: R(), phoneUser: R() < 0.5, behind: kind === 'elder' && R() < 0.6, active: false };
 }
-const PEDS = []; for (let i = 0; i < 14; i++){ const p = makePed(); p.g.visible = false; scene.add(p.g); PEDS.push(p); }
+function poseHuman(h, t, o = {}){
+  const a = h.amp, ph = h.ph, run = o.run || 0, A = (0.42 + 0.18*run) * a;
+  for (let i = 0; i < 2; i++){
+    const f = ph + i*Math.PI, sf = Math.sin(f), th = A*sf;
+    const kn = a*(0.06 + (0.72 + 0.5*run)*Math.pow(Math.max(0, Math.cos(f + 0.45)), 2)) + 0.12*a*Math.max(0, Math.sin(f - 1.2));
+    h.hips[i].rotation.z = th; h.knees[i].rotation.z = -kn;
+    h.ankles[i].rotation.z = -(th - kn)*0.75 - 0.3*a*Math.max(0, -Math.sin(f + 0.5));
+    h.sh[i].rotation.z = -(0.36 + 0.3*run)*a*sf; h.sh[i].rotation.x = (i ? -1 : 1)*0.07;
+    h.el[i].rotation.z = 0.18 + 0.25*a*Math.max(0, -sf) + 1.2*run*a;
+  }
+  const P = h.pelvis, T = h.torso, Hd = h.head;
+  P.position.set(0, 0.92 + 0.022*a*Math.cos(2*ph) - 0.015*a - 0.05*run, 0.02*a*Math.sin(ph));
+  P.rotation.set(0.035*a*Math.sin(ph), 0.1*a*Math.sin(ph), 0);
+  T.rotation.set(0, -0.17*a*Math.sin(ph), -(o.stoop || 0) - 0.04*a - 0.12*run);
+  Hd.rotation.set(0, -T.rotation.y - P.rotation.y + (o.look || 0), (o.stoop || 0)*0.75 + 0.04*a);
+  // 站著：重心慢慢在兩腳間換、一邊膝蓋放鬆、呼吸
+  if (a < 0.3){
+    const k = 1 - a/0.3, w = Math.sin(t*0.45 + h.seed);
+    P.position.z += 0.03*w*k; h.knees[w > 0 ? 0 : 1].rotation.z -= 0.14*Math.abs(w)*k; T.rotation.x = -0.03*w*k;
+    T.position.y = 0.1 + 0.004*Math.sin(t*1.6 + h.seed);
+  }
+  if (o.behind){ for (let i = 0; i < 2; i++){ h.sh[i].rotation.z = -0.32; h.sh[i].rotation.x = (i ? 1 : -1)*0.12; h.el[i].rotation.z = 0.7; } }
+  if (o.umbrella){ h.sh[1].rotation.z = 0.5; h.sh[1].rotation.x = -0.25; h.el[1].rotation.z = 1.35; }
+  if (o.phone){ h.sh[1].rotation.z = 0.3; h.sh[1].rotation.x = 0.2; h.el[1].rotation.z = 1.8; Hd.rotation.z -= 0.45; }
+  if (o.sit){
+    P.position.y = 0.47; for (let i = 0; i < 2; i++){ h.hips[i].rotation.z = 1.5; h.knees[i].rotation.z = -1.45 - 0.08*i; h.ankles[i].rotation.z = 0; }
+    T.rotation.z = 0.08; h.sh[0].rotation.z = 0.25; h.el[0].rotation.z = 1.2;
+  }
+  if (o.fan){ h.sh[1].rotation.z = 0.45; h.sh[1].rotation.x = -0.1; h.el[1].rotation.z = 1.5 + 0.22*Math.sin(t*7.5); }
+  if (o.gesture){ const gk = Math.max(0, Math.sin(t*0.7 + h.seed)); h.sh[1].rotation.z = 0.35*gk; h.el[1].rotation.z = 0.2 + 1.2*gk + 0.25*gk*Math.sin(t*4); Hd.rotation.z += 0.06*Math.sin(t*2.3 + h.seed); }
+  if (o.sweep){ T.rotation.z = -0.35; T.rotation.y = 0.45*Math.sin(t*1.5); for (let i = 0; i < 2; i++){ h.sh[i].rotation.z = 0.75 - 0.15*i; h.sh[i].rotation.x = (i ? 1 : -1)*0.25; h.el[i].rotation.z = 0.5; } }
+}
+const lerpAng = (a, b, k) => { let d = ((b - a + Math.PI) % (Math.PI*2) + Math.PI*2) % (Math.PI*2) - Math.PI; return a + d*Math.min(1, k); };
+const PEDS = [];
+for (let i = 0; i < 18; i++){ const k = i < 4 ? 'elder' : i < 7 ? 'kid' : 'adult'; const h = makeHuman(k); h.g.visible = false; scene.add(h.g); PEDS.push(h); }
+// 固定在對面騎樓的人：坐在小紅凳上搧扇子的老闆娘、兩個站著聊天的人、拿掃把掃地的阿伯
+const STATICS = [];
+{
+  const keeper = makeHuman('adult'); keeper.g.position.set(-14.5, GROUND + 0.15, -18.2); keeper.g.rotation.y = -Math.PI/2; scene.add(keeper.g);
+  box(0.3, 0.42, 0.3, std(0xc8302a), -14.5, GROUND + 0.15 + 0.21, -18.32);
+  const fan = new THREE.Mesh(new THREE.CircleGeometry(0.13, 8, 0, Math.PI), std(0xf2e8c8, { side: THREE.DoubleSide })); fan.position.set(0.03, -0.32, 0); fan.rotation.y = Math.PI/2; keeper.el[1].add(fan);
+  STATICS.push({ h: keeper, o: { sit: true, fan: true } });
+  const c1 = makeHuman('adult'), c2 = makeHuman('elder');
+  c1.g.position.set(-2.7, GROUND + 0.15, -17.6); c1.g.rotation.y = 0.2; c2.g.position.set(-1.95, GROUND + 0.15, -17.75); c2.g.rotation.y = Math.PI - 0.2; scene.add(c1.g, c2.g);
+  STATICS.push({ h: c1, o: { gesture: true } }, { h: c2, o: { behind: true, stoop: 0.15 } });
+  const sw = makeHuman('elder'); sw.g.position.set(-20, GROUND + 0.15, -14.7); scene.add(sw.g);
+  const broom = joint(sw.torso, 0.42, 0.1, 0); broom.rotation.z = -0.55;
+  part(0.025, 1.2, 0.025, std(0x8a6a3a), broom, 0, -0.4, 0); part(0.12, 0.2, 0.35, std(0xc8b070), broom, 0, -1.05, 0);
+  STATICS.push({ h: sw, o: { sweep: true, stoop: 0.3 }, sweeper: true, x: -20, dir: 1 });
+}
 
+/* ---------- 狗和貓：四條腿各兩節。慢走是四拍步（左後、左前、右後、右前），小跑是對角兩兩同步；會坐、會趴、會低頭嗅、會搖尾巴 ---------- */
+function makeQuad(col, s, cat = false){
+  const fur = std(col), dk = std(new THREE.Color(col).multiplyScalar(0.5));
+  const g = new THREE.Group(); g.scale.setScalar(s);
+  const body = joint(g, 0, 0.5, 0);
+  const torsoM = part(cat ? 0.5 : 0.62, cat ? 0.17 : 0.22, cat ? 0.16 : 0.22, fur, body, 0, 0, 0);
+  part(0.22, cat ? 0.18 : 0.26, cat ? 0.17 : 0.24, fur, body, 0.2, 0.02, 0);
+  const neck = joint(body, cat ? 0.25 : 0.3, 0.07, 0); const nm = part(0.11, 0.18, 0.11, fur, neck, 0.03, 0.07, 0); nm.rotation.z = -0.5;
+  const head = joint(neck, 0.08, cat ? 0.15 : 0.19, 0);
+  part(cat ? 0.14 : 0.17, cat ? 0.13 : 0.15, cat ? 0.15 : 0.15, fur, head, 0, 0, 0);
+  part(cat ? 0.05 : 0.13, cat ? 0.06 : 0.08, cat ? 0.08 : 0.09, fur, head, cat ? 0.08 : 0.13, -0.03, 0);
+  part(0.03, 0.03, 0.04, std(0x141414), head, cat ? 0.11 : 0.2, -0.01, 0);
+  const ears = [];
+  for (const z of [-0.05, 0.05]){ const e = part(0.035, cat ? 0.07 : 0.08, 0.05, cat ? fur : dk, head, -0.02, 0.1, z); e.rotation.x = z > 0 ? -0.25 : 0.25; ears.push(e); }
+  const tail = joint(body, cat ? -0.25 : -0.31, 0.06, 0); part(0.045, cat ? 0.42 : 0.26, 0.045, fur, tail, 0, cat ? 0.21 : 0.13, 0);
+  const legs = [];
+  for (const [x, sd] of [[0.22, -1], [0.22, 1], [-0.22, -1], [-0.22, 1]]){
+    const up = joint(body, cat ? x*0.85 : x, -0.08, sd*(cat ? 0.06 : 0.08)); part(0.075, 0.21, 0.075, fur, up, 0, -0.105, 0);
+    const lo = joint(up, 0, -0.21, 0); part(0.06, 0.2, 0.06, fur, lo, 0, -0.1, 0); part(0.08, 0.03, 0.065, fur, lo, 0.015, -0.205, 0);
+    legs.push({ up, lo });
+  }
+  return { g, s, body, neck, head, tail, torsoM, legs, ears, cat, seed: R()*10, ph: R()*6, amp: 0, trot: 0, sitK: 0, lieK: 0, sniffK: 0, groomK: 0, wagF: 3, wagA: 0.15, look: 0, lookT: 0, x: 0, z: 0, y: 0, yaw: 0, v: 0, timer: 1, state: 'idle' };
+}
+function poseQuad(d, t){
+  const a = d.amp, tr = d.trot;
+  const off = [lerp(Math.PI*0.5, 0, tr), lerp(Math.PI*1.5, Math.PI, tr), lerp(0, Math.PI, tr), lerp(Math.PI, 0, tr)];   // 左前、右前、左後、右後
+  for (let i = 0; i < 4; i++){
+    const f = d.ph + off[i], front = i < 2, A = (0.42 + 0.12*tr)*a;
+    let up = A*Math.sin(f) + (front ? 0 : 0.18), lo = -(front ? 0.9 : 0.75)*a*Math.pow(Math.max(0, Math.cos(f + 0.3)), 1.5) + (front ? 0 : -0.32);
+    if (front){ up += -0.5*d.sitK + 1.35*d.lieK; lo += -0.15*d.lieK; }
+    else { up += 1.2*d.sitK + 1.25*d.lieK; lo += -1.6*d.sitK - 1.9*d.lieK; }
+    if (i === 0 && d.groomK > 0){ up += d.groomK*(1.1 + 0.15*Math.sin(t*9)); lo -= d.groomK*1.3; }
+    d.legs[i].up.rotation.z = up; d.legs[i].lo.rotation.z = lo;
+  }
+  d.body.position.y = 0.5 + 0.015*a*Math.cos(2*d.ph) - 0.12*d.sitK - 0.33*d.lieK;
+  d.body.rotation.z = 0.5*d.sitK + 0.02*a*Math.sin(d.ph);
+  d.neck.rotation.z = -0.95*d.sniffK - 0.35*d.sitK - 0.55*d.lieK - 0.7*d.groomK;
+  d.head.rotation.z = d.sniffK*0.18*Math.sin(t*11) + 0.15*d.lieK;
+  d.head.rotation.y = d.look*(1 - d.sniffK);
+  d.tail.rotation.x = Math.sin(t*d.wagF)*d.wagA;
+  d.tail.rotation.z = (d.cat ? 0.5 + 0.25*Math.sin(t*0.6) : 0.7) + (d.cat ? 0.9 : 0.5)*d.lieK + 0.4*d.sitK;
+  d.torsoM.scale.y = 1 + 0.04*Math.sin(t*(d.lieK > 0.5 ? 1.5 : 3.0));
+  for (const e of d.ears) e.rotation.z = Math.random() < 0.004 ? -0.4 : e.rotation.z*0.9;   // 偶爾抖一下耳朵
+}
+const DOGS = [];
+const groundAt = z => (z < ROAD1 || z > ROAD0) ? GROUND + 0.15 : GROUND;
+function addDog(col, s, x, z, area){ const d = makeQuad(col, s); Object.assign(d, { x, z, area, yaw: R()*6 }); scene.add(d.g); DOGS.push(d); return d; }
+// 兩隻在對面騎樓一帶晃的土狗、一隻睡在窗下榕樹旁的黑狗（俯身才看得到）
+addDog(0xb8894e, 1.0, -8, -17.8, { x0: -34, x1: 4.5, z0: -14.6, z1: -19.0 });
+addDog(0xe2dccd, 0.9, -24, -15.0, { x0: -40, x1: 4.5, z0: -14.6, z1: -19.0 });
+const SLEEPER = addDog(0x26221e, 1.05, 3.4, -2.2, null); SLEEPER.lieK = 1; SLEEPER.state = 'sleep'; SLEEPER.yaw = 2.6;
+// 遛狗的人：沿著對面人行道來回走，狗在旁邊，停下來嗅的時候主人也等一下
+const WALKER = makeHuman('adult'); WALKER.g.visible = true; scene.add(WALKER.g);
+Object.assign(WALKER, { x: -30, z: -15.1, dir: 1, wait: 0 });
+const LEASHED = addDog(0xd8b07a, 0.75, -29, -14.5, null); LEASHED.state = 'leash';
+const leashGeo = new THREE.BufferGeometry(); leashGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Array(9).fill(0), 3));
+const leash = new THREE.Line(leashGeo, new THREE.LineBasicMaterial({ color: 0xc8302a })); leash.frustumCulled = false; scene.add(leash);
+// 貓：趴在對面騎樓前一台機車的座墊上，會理毛、轉頭、甩尾巴，偶爾跳下來換一台
+const CAT = makeQuad(0xd9822b, 0.42, true); scene.add(CAT.g);
+Object.assign(CAT, { state: 'perch', timer: 40, seat: null });
+
+/* ---------- 鳥 ---------- */
+const BIRD_T = {
+  sparrow: { S: 1, body: 0x8a6a4a, wing: 0x6a4e36, head: 0x5a3e2a, span: 0.12, freq: 15 },
+  pigeon: { S: 1.9, body: 0x8a8e98, wing: 0x737782, head: 0x4f5e66, span: 0.13, freq: 8 },
+  bulbul: { S: 1.15, body: 0x8a9a6a, wing: 0x6a7a48, head: 0x2a2a2a, span: 0.12, freq: 13 },
+  swallow: { S: 1.05, body: 0x1e2230, wing: 0x1a1e2a, head: 0x1e2230, span: 0.17, freq: 9 },
+  egret: { S: 4.2, body: 0xf4f4f0, wing: 0xf0f0ec, head: 0xf4f4f0, span: 0.2, freq: 2.4 },
+};
+function wingGeo(span, sd){ const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0.035, 0, 0, -0.045, 0, 0, -0.035, 0, span*sd, 0.035, 0, 0, -0.035, 0, span*sd, 0.0, 0, span*sd*0.6], 3)); g.computeVertexNormals(); return g; }
+function makeBird(type){
+  const T = BIRD_T[type], g = new THREE.Group(); g.scale.setScalar(T.S);
+  const body = joint(g, 0, 0, 0);
+  const bm = new THREE.Mesh(new THREE.SphereGeometry(1, 7, 5), std(T.body)); bm.scale.set(0.075, 0.042, 0.042); body.add(bm);
+  const head = joint(body, type === 'egret' ? 0.11 : 0.06, type === 'egret' ? 0.05 : 0.03, 0);
+  head.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), std(T.head)));
+  if (type === 'egret') part(0.11, 0.025, 0.025, std(0xf0f0ec), body, 0.07, 0.025, 0).rotation.z = 0.5;
+  part(type === 'egret' ? 0.07 : 0.025, 0.008, 0.01, std(type === 'egret' ? 0xe8b020 : 0x2a2420), head, type === 'egret' ? 0.06 : 0.035, -0.004, 0);
+  if (type === 'bulbul'){ const w = new THREE.Mesh(new THREE.SphereGeometry(0.015, 5, 4), std(0xf2f2ea)); w.position.set(-0.012, 0.014, 0); head.add(w); }
+  if (type === 'egret') for (const z of [-0.012, 0.012]) part(0.16, 0.006, 0.006, std(0x1a1a1a), body, -0.13, -0.02, z);
+  const tail = joint(body, -0.065, 0.005, 0);
+  if (type === 'swallow'){ for (const z of [-1, 1]){ const p = part(0.08, 0.005, 0.012, std(T.wing), tail, -0.04, 0, z*0.012); p.rotation.y = -z*0.25; } }
+  else part(0.06, 0.006, 0.035, std(T.wing), tail, -0.03, 0, 0);
+  const wm = std(T.wing, { side: THREE.DoubleSide });
+  const wR = joint(body, 0, 0.015, 0.02), wL = joint(body, 0, 0.015, -0.02);
+  wR.add(new THREE.Mesh(wingGeo(T.span, 1), wm)); wL.add(new THREE.Mesh(wingGeo(T.span, -1), wm));
+  g.traverse(o => { o.castShadow = false; });
+  scene.add(g);
+  return { g, body, head, tail, wR, wL, type, T, p: new THREE.Vector3(), v: new THREE.Vector3(), fold: 1, wp: R()*6, seed: R()*100, yaw: 0, pitch: 0 };
+}
+function poseBird(b, t, dt, flapK, fold){
+  b.fold += (fold - b.fold) * Math.min(1, dt*10);
+  b.wp += dt*b.T.freq*Math.PI*2*flapK;
+  const open = (1 - b.fold)*(0.15 + 0.85*flapK*Math.sin(b.wp)) - b.fold*0.12;
+  b.wR.rotation.set(-open, -b.fold*1.3, 0); b.wL.rotation.set(open, b.fold*1.3, 0);
+  b.g.position.copy(b.p); b.g.rotation.set(0, b.yaw, 0); b.body.rotation.z = b.pitch;
+}
+const faceVel = (b, k) => { const hv = Math.hypot(b.v.x, b.v.z); if (hv > 0.05) b.yaw = lerpAng(b.yaw, Math.atan2(-b.v.z, b.v.x), k); b.pitch = clamp(Math.atan2(b.v.y, Math.max(hv, 0.01))*0.7, -0.7, 0.7); };
+// 電線上的一群麻雀
+
+const FLOCK = { birds: [], state: 'perched', timer: 30, tt: R()*100, cx: 0 };
+// 地上的鴿子、窗前榕樹裡的白頭翁、街上飛的燕子、偶爾飛過高空的白鷺鷥
+const PIGEONS = [], BULBULS = [], SWALLOWS = [];
+const EGRET = { b: null, active: false, next: 60 + R()*90 };
+
+{ const m = new THREE.Mesh(mergeGeometries(DETAIL), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true })); m.castShadow = m.receiveShadow = true; scene.add(m);
+  const am = glowMat(null, null, 1.6, { color: 0xdedcd4 }); am.emissive.set(0xfff2dc); scene.add(new THREE.Mesh(mergeGeometries(ARC_G), am)); }
 /* ---------- 光 ---------- */
 const sun = new THREE.DirectionalLight(0xfff0d8, 3);
 sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
@@ -1066,7 +1339,7 @@ function audioFrame(t, dt, act){
   });
   // 偶爾一聲短短的喇叭
   if (t > A.horn && act[0] && act[0].d < 40){
-    A.horn = t + 70 + Math.random()*90;
+    A.horn = t + 70 + Math.random()*90; startleBirds();
     const o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), p = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
     o.type = o2.type = 'square'; o.frequency.value = 420; o2.frequency.value = 500; o.connect(g); o2.connect(g); g.connect(p); p.connect(A.outG); if (p.pan) p.pan.value = act[0].pan;
     g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(ph ? 0.03 : 0.015, at + 0.02); g.gain.setValueAtTime(ph ? 0.03 : 0.015, at + 0.18); g.gain.linearRampToValueAtTime(0, at + 0.22);
@@ -1181,44 +1454,370 @@ function updateTraffic(t, dt){
     v.ek = v.ek || 0;
   }
 }
-// 行人
+// 行人：沿著兩側人行道走，有的走到斑馬線等行人綠燈過馬路；小孩跟在大人旁邊；下雨撐傘、閃綠燈時小跑步
 const PED_Z = { far: -15.4, far2: -16.0, near: -2.6 };
 let pedTimer = 1;
+const SIG_POS = new THREE.Vector3(ZEBRA.x0 - 0.6, GROUND + 2.7, ROAD1 - 0.5);
+function stepHuman(h, t, dt, vx, vz, speed, o){
+  if (speed > 0.05) h.yaw = lerpAng(h.yaw, Math.atan2(-vz, vx), dt*6);
+  else if (o.faceYaw !== undefined) h.yaw = lerpAng(h.yaw, o.faceYaw, dt*3);
+  const target = speed > 0.05 ? (h.kind === 'elder' ? 0.65 : 0.9) * (o.run ? 1.15 : 1) : 0;
+  h.amp += (target - h.amp) * Math.min(1, dt*5);
+  h.ph += dt*Math.PI*2*speed/(1.45*h.s*(h.kind === 'elder' ? 0.72 : 1));
+  h.g.rotation.y = h.yaw;
+  const rainy = st.rain > 0.15 + h.rainK*0.6;
+  h.um.visible = rainy; if (h.bag) h.bag.visible = true;
+  h.phone.visible = !!o.phone;
+  poseHuman(h, t, { ...o, umbrella: rainy, stoop: (h.kind === 'elder' ? 0.2 : 0) + (o.stoop || 0), behind: h.behind && !rainy && speed > 0.05 });
+}
 function updatePeds(t, dt){
   pedTimer -= dt;
   if (pedTimer <= 0){
     pedTimer = (2.5 + R()*4) / (1 - 0.6*SKY.night);
-    const p = PEDS.find(q => !q.active);
+    const p = PEDS.find(q => !q.active && q.kind !== 'kid');
     if (p){
       const fromLeft = R() < 0.5, cross = R() < 0.45;
-      p.active = true; p.g.visible = true; p.speed = 1.1 + R()*0.4; p.phase = R()*6.28;
-      if (R() < 0.75){ p.x = fromLeft ? -70 : 70; p.z = R() < 0.5 ? PED_Z.far : PED_Z.far2; p.dx = fromLeft ? 1 : -1; p.dz = 0; p.state = cross ? 'toCross' : 'walk'; p.side = 'far'; }
-      else { p.x = fromLeft ? -70 : 70; p.z = PED_Z.near; p.dx = fromLeft ? 1 : -1; p.dz = 0; p.state = cross ? 'toCross' : 'walk'; p.side = 'near'; }
-      p.cx = (ZEBRA.x0 + ZEBRA.x1)/2 + (R()-0.5)*2.2;
+      p.active = true; p.g.visible = true; p.speed = p.kind === 'elder' ? 0.65 + R()*0.2 : 1.1 + R()*0.35;
+      p.x = fromLeft ? -70 : 70; p.dx = fromLeft ? 1 : -1; p.dz = 0; p.state = cross ? 'toCross' : 'walk';
+      if (R() < 0.75){ p.z = R() < 0.5 ? PED_Z.far : PED_Z.far2; p.side = 'far'; } else { p.z = PED_Z.near; p.side = 'near'; }
+      p.cx = (ZEBRA.x0 + ZEBRA.x1)/2 + (R()-0.5)*2.2; p.yaw = Math.atan2(0, p.dx);
+      const kid = p.kind === 'adult' && R() < 0.3 ? PEDS.find(q => !q.active && q.kind === 'kid') : null;
+      if (kid){ kid.active = true; kid.g.visible = true; kid.parent = p; p.kid = kid; kid.yaw = p.yaw; p.speed = Math.min(p.speed, 1.05); } else p.kid = null;
     }
   }
-  const walkOK = st.sig === 3;
+  const walkOK = st.sig === 3, hurry = st.sig === 4;
   for (const p of PEDS){
-    if (!p.active) continue;
+    if (!p.active || p.kind === 'kid') continue;
     let mv = true;
     if (p.state === 'toCross' && (p.x - p.cx) * p.dx > -0.1){ p.state = 'wait'; p.x = p.cx; }
     if (p.state === 'wait'){
-      // 走到斑馬線那頭等燈
       const edge = p.side === 'far' ? ROAD1 - 0.5 : ROAD0 + 0.5;
-      if (Math.abs(p.z - edge) > 0.05){ p.dx = 0; p.dz = Math.sign(edge - p.z); if (Math.abs(p.z - edge) < p.speed*dt) { p.z = edge; } }
+      if (Math.abs(p.z - edge) > 0.05){ p.dx = 0; p.dz = Math.sign(edge - p.z); if (Math.abs(p.z - edge) < p.speed*dt) p.z = edge; }
       else { mv = false; if (walkOK){ p.state = 'cross'; p.dz = p.side === 'far' ? 1 : -1; p.dx = 0; } }
     }
     if (p.state === 'cross'){
       const target = p.side === 'far' ? PED_Z.near : PED_Z.far;
       if ((target - p.z) * p.dz <= 0){ p.state = 'walk'; p.side = p.side === 'far' ? 'near' : 'far'; p.dz = 0; p.dx = R() < 0.5 ? 1 : -1; p.z = target; }
     }
-    if (mv){ p.x += p.dx * p.speed * dt * (p.state === 'cross' && st.sig === 4 ? 1.5 : 1); p.z += p.dz * p.speed * dt; p.phase += dt * p.speed * 5.5; }
-    p.g.position.set(p.x, GROUND + 0.15 + (mv ? Math.abs(Math.sin(p.phase))*0.03 : 0), p.z);
-    p.g.rotation.y = Math.atan2(p.dx, p.dz) - Math.PI/2;
-    const sw = mv ? Math.sin(p.phase)*0.45 : 0; p.legs[0].rotation.z = sw; p.legs[1].rotation.z = -sw;
-    p.um.visible = st.rain > 0.15 + p.rainK*0.6;
-    if (Math.abs(p.x) > 75){ p.active = false; p.g.visible = false; }
+    const run = p.state === 'cross' && hurry ? 1 : 0, sp = mv ? p.speed * (run ? 1.6 : 1) : 0;
+    p.x += p.dx*sp*dt; p.z += p.dz*sp*dt;
+    p.g.position.set(p.x, groundAt(p.z), p.z);
+    const waiting = !mv;
+    const look = waiting ? clamp(lerpAng(0, Math.atan2(-(SIG_POS.z - p.z), SIG_POS.x - p.x) - p.yaw, 1), -0.9, 0.9) * (0.5 + 0.5*Math.sin(t*0.3 + p.seed)) : 0.25*Math.sin(t*0.4 + p.seed)*Math.max(0, Math.sin(t*0.13 + p.seed));
+    stepHuman(p, t, dt, p.dx, p.dz, sp, { run, phone: waiting && p.phoneUser, look, faceYaw: p.side === 'far' ? -Math.PI/2 : Math.PI/2 });
+    // 小孩：在大人右手邊、稍微落後一點，步子比較快
+    const k = p.kid;
+    if (k){
+      const hx = Math.cos(p.yaw), hz = -Math.sin(p.yaw);
+      const kx = p.x - hx*0.25 - hz*0.5, kz = p.z - hz*0.25 + hx*0.5;
+      k.x = kx; k.z = kz; k.g.position.set(kx, groundAt(kz), kz);
+      stepHuman(k, t, dt, p.dx, p.dz, sp, { run, look: waiting ? 0.8*Math.sin(t*0.9 + k.seed) : 0.3*Math.sin(t*0.7 + k.seed), faceYaw: p.yaw });
+      k.sh[0].rotation.z = 0.35; k.sh[0].rotation.x = 0.45; k.el[0].rotation.z = 0.5;   // 牽著大人的手
+    }
+    if (Math.abs(p.x) > 75){ p.active = false; p.g.visible = false; if (k){ k.active = false; k.g.visible = false; k.parent = null; p.kid = null; } }
   }
+  // 騎樓裡固定的人
+  for (const s of STATICS){
+    if (s.sweeper){
+      const day = SKY.night < 0.4 && st.rain < 0.4; s.h.g.visible = day;
+      if (!day) continue;
+      s.x += s.dir*0.12*dt; if (s.x > -17 || s.x < -23) s.dir *= -1;
+      s.h.g.position.x = s.x; s.h.yaw = lerpAng(s.h.yaw, s.dir > 0 ? 0 : Math.PI, dt*2); s.h.g.rotation.y = s.h.yaw;
+      s.h.amp = 0.12; s.h.ph += dt*1.2;
+    }
+    poseHuman(s.h, t, s.o);
+  }
+  // 遛狗的人
+  {
+    const w = WALKER, d = LEASHED;
+    w.wait -= dt;
+    const sp = w.wait > 0 ? 0 : 0.95;
+    w.x += w.dir*sp*dt; if (w.x > 45 && w.dir > 0 || w.x < -45 && w.dir < 0) w.dir *= -1;
+    w.g.position.set(w.x, groundAt(w.z), w.z);
+    stepHuman(w, t, dt, w.dir, 0, sp, { look: w.wait > 0 ? 0.9 : 0 });
+    w.sh[0].rotation.z = 0.35; w.el[0].rotation.z = 0.6;   // 手握牽繩
+    // 狗：在主人前面靠路邊，偶爾停下來嗅一嗅
+    const tx = w.x + w.dir*0.95, tz = w.z + 0.65;
+    if (d.state === 'leash'){
+      const dx = tx - d.x, dz = tz - d.z, dist = Math.hypot(dx, dz);
+      const want = Math.min(2.2, dist*2.2);
+      d.v += (want - d.v)*Math.min(1, dt*3);
+      if (dist > 0.02){ d.x += dx/dist*d.v*dt; d.z += dz/dist*d.v*dt; }
+      if (d.v > 0.2) d.yaw = lerpAng(d.yaw, Math.atan2(-dz, dx), dt*5); else d.yaw = lerpAng(d.yaw, w.dir > 0 ? 0 : Math.PI, dt*2);
+      d.timer -= dt;
+      if (d.timer < 0 && Math.abs(w.x) < 40){ d.state = 'sniff'; d.timer = 3 + R()*4; w.wait = d.timer; }
+      d.sniffK += (0 - d.sniffK)*Math.min(1, dt*3);
+    } else {
+      d.v *= 1 - Math.min(1, dt*4); d.timer -= dt; d.sniffK += (1 - d.sniffK)*Math.min(1, dt*3);
+      if (d.timer < 0){ d.state = 'leash'; d.timer = 12 + R()*20; }
+    }
+    d.amp = clamp(d.v/0.9, 0, 1.2); d.trot += ((d.v > 1.2 ? 1 : 0) - d.trot)*Math.min(1, dt*3);
+    d.ph += dt*Math.PI*2*d.v/((d.trot > 0.5 ? 0.9 : 0.6)*d.s);
+    d.wagA = 0.25; d.wagF = 5;
+    d.g.position.set(d.x, groundAt(d.z), d.z); d.g.rotation.y = d.yaw;
+    poseQuad(d, t);
+    // 牽繩：從主人的手到狗的脖子，中間垂一點
+    const a = w.hands[0].getWorldPosition(_lA), b = d.neck.getWorldPosition(_lB), pa = leashGeo.attributes.position;
+    pa.setXYZ(0, a.x, a.y, a.z); pa.setXYZ(1, (a.x + b.x)/2, (a.y + b.y)/2 - 0.12, (a.z + b.z)/2); pa.setXYZ(2, b.x, b.y, b.z); pa.needsUpdate = true;
+  }
+}
+const _lA = new THREE.Vector3(), _lB = new THREE.Vector3();
+
+// 流浪狗：在一塊範圍裡走走停停，嗅一嗅、坐下、趴在騎樓下睡；下雨就躲進騎樓趴著；偶爾叫兩聲
+let nextBark = 60 + R()*80;
+function updateDogs(t, dt){
+  for (const d of DOGS){
+    if (d === LEASHED) continue;
+    if (d.state === 'sleep'){ d.lieK = 1; d.wagA = 0.03; d.wagF = 1; d.look = 0.15*Math.sin(t*0.05); }
+    else {
+      d.timer -= dt;
+      const A = d.area, rainy = st.rain > 0.5;
+      if (d.state === 'move'){
+        const dx = d.tx - d.x, dz = d.tz - d.z, dist = Math.hypot(dx, dz), sp = d.run ? 1.8 : 0.8;
+        d.v += (Math.min(sp, dist*1.5) - d.v)*Math.min(1, dt*2.5);
+        if (dist < 0.12){ d.state = 'idle'; d.timer = 0; }
+        else { d.x += dx/dist*d.v*dt; d.z += dz/dist*d.v*dt; d.yaw = lerpAng(d.yaw, Math.atan2(-dz, dx), dt*4); }
+      } else {
+        d.v *= 1 - Math.min(1, dt*4);
+        if (d.timer <= 0){
+          const r = R();
+          d.sit = d.lie = d.sniff = false;
+          if (rainy){ d.state = 'move'; d.tx = A.x0 + R()*(A.x1 - A.x0); d.tz = -18.6; d.run = true; d.next = 'lie'; }
+          else if (r < 0.5){ d.state = 'move'; d.tx = A.x0 + R()*(A.x1 - A.x0); d.tz = A.z0 + R()*(A.z1 - A.z0); d.run = R() < 0.25; d.next = R() < 0.5 ? 'sniff' : null; }
+          else if (r < 0.7){ d.sniff = true; d.timer = 2 + R()*4; }
+          else if (r < 0.87){ d.sit = true; d.timer = 6 + R()*12; }
+          else { d.lie = true; d.timer = 20 + R()*40; }
+          if (d.state === 'move' && d.timer <= 0) d.timer = 999;
+        }
+      }
+      if (d.state === 'idle' && d.next){ if (d.next === 'lie'){ d.lie = true; d.timer = 30 + R()*30; } else if (d.next === 'sniff'){ d.sniff = true; d.timer = 2 + R()*3; } d.next = null; }
+      if (d.state === 'move' && d.timer > 900 && Math.hypot(d.tx - d.x, d.tz - d.z) < 0.12){ d.state = 'idle'; d.timer = 0; }
+      if (d.sniff && d.state !== 'move'){ d.x += Math.cos(d.yaw)*0.2*dt; d.z -= Math.sin(d.yaw)*0.2*dt; }
+      const k = Math.min(1, dt*2);
+      d.sitK += ((d.sit && d.state !== 'move' ? 1 : 0) - d.sitK)*k; d.lieK += ((d.lie && d.state !== 'move' ? 1 : 0) - d.lieK)*k*0.7; d.sniffK += ((d.sniff && d.state !== 'move' ? 1 : 0) - d.sniffK)*k*1.5;
+      d.lookT -= dt; if (d.lookT < 0){ d.lookT = 1 + R()*4; d.lookGoal = (R() - 0.5)*1.4; }
+      d.look += ((d.lookGoal || 0) - d.look)*Math.min(1, dt*3);
+      d.wagA = d.lie ? 0.05 : d.state === 'move' ? 0.25 : 0.15; d.wagF = d.state === 'move' ? 5 : 2.5;
+    }
+    d.amp = clamp(d.v/0.9, 0, 1.2); d.trot += ((d.v > 1.2 ? 1 : 0) - d.trot)*Math.min(1, dt*3);
+    d.ph += dt*Math.PI*2*d.v/((d.trot > 0.5 ? 0.9 : 0.6)*d.s);
+    d.g.position.set(d.x, groundAt(d.z), d.z); d.g.rotation.y = d.yaw;
+    poseQuad(d, t);
+  }
+  // 叫兩聲：垃圾車經過或隨機
+  if (t > nextBark || (TRUCK.active && Math.abs(TRUCK.g.position.x) < 12 && t > nextBark - 50)){
+    nextBark = t + 70 + R()*120; const d = DOGS[Math.floor(R()*2)]; sfxBark(d.g.position);
+    d.sit = false; d.lie = false; d.sniff = false; d.look = 0.3;
+  }
+  // 貓
+  const c = CAT;
+  c.timer -= dt;
+  if (!c.seat){ c.seat = PARKED.reduce((b, p) => Math.abs(p.x + 11) < Math.abs(b.x + 11) ? p : b, PARKED[0]); c.x = c.seat.x; c.z = c.seat.z; c.y = c.seat.y; c.yaw = -Math.PI/2 + 0.3; }
+  if (c.state === 'perch'){
+    c.y = c.seat.y; c.v = 0;
+    const ph = Math.floor(t/14 + c.seed) % 4;   // 趴著、坐著理毛、坐著看、趴著
+    c.lieK += ((ph === 0 || ph === 3 ? 1 : 0) - c.lieK)*Math.min(1, dt*1.5); c.sitK += ((ph === 1 || ph === 2 ? 1 : 0) - c.sitK)*Math.min(1, dt*1.5);
+    c.groomK += ((ph === 1 ? 1 : 0) - c.groomK)*Math.min(1, dt*2);
+    c.lookT -= dt; if (c.lookT < 0){ c.lookT = 2 + R()*5; c.lookGoal = (R() - 0.5)*1.6; } c.look += ((c.lookGoal || 0) - c.look)*Math.min(1, dt*4);
+    c.wagA = 0.25; c.wagF = 1.2;
+    if (c.timer < 0 && st.rain < 0.3){ const others = PARKED.filter(p => Math.abs(p.x - c.seat.x) > 2 && Math.abs(p.x - c.seat.x) < 9 && Math.abs(p.x) < 30); if (others.length){ c.next = pick(others); c.state = 'jumpDown'; c.jt = 0; c.j0 = new THREE.Vector3(c.x, c.y, c.z); c.j1 = new THREE.Vector3(c.x, GROUND + 0.15, c.z - 0.7); } c.timer = 100 + R()*120; }
+  } else if (c.state === 'jumpDown' || c.state === 'jumpUp'){
+    c.jt += dt/0.55; const u = Math.min(1, c.jt);
+    c.x = lerp(c.j0.x, c.j1.x, u); c.z = lerp(c.j0.z, c.j1.z, u); c.y = lerp(c.j0.y, c.j1.y, u) + Math.sin(u*Math.PI)*0.35;
+    c.yaw = lerpAng(c.yaw, Math.atan2(-(c.j1.z - c.j0.z), c.j1.x - c.j0.x + 1e-4), dt*12);
+    c.lieK *= 0.8; c.sitK *= 0.8; c.groomK = 0; c.amp = 0.5;
+    if (u >= 1){ if (c.state === 'jumpDown'){ c.state = 'walk'; } else { c.state = 'perch'; c.seat = c.next; c.yaw = -Math.PI/2 + (R() - 0.5)*0.8; } }
+  } else if (c.state === 'walk'){
+    const tx = c.next.x, tz = c.next.z - 0.7, dx = tx - c.x, dist = Math.abs(dx);
+    c.v += (0.45 - c.v)*Math.min(1, dt*2); c.x += Math.sign(dx)*c.v*dt; c.y = GROUND + 0.15; c.yaw = lerpAng(c.yaw, dx > 0 ? 0 : Math.PI, dt*5);
+    if (dist < 0.1){ c.state = 'jumpUp'; c.jt = 0; c.j0 = new THREE.Vector3(c.x, c.y, c.z); c.j1 = new THREE.Vector3(c.next.x, c.next.y, c.next.z); c.v = 0; }
+  }
+  if (c.state === 'walk'){ c.amp = clamp(c.v/0.4, 0, 1); c.ph += dt*Math.PI*2*c.v/(0.55*c.s); c.trot = 0; c.wagA = 0.1; }
+  else if (c.state === 'perch') c.amp = 0;
+  c.g.position.set(c.x, c.y, c.z); c.g.rotation.y = c.yaw;
+  poseQuad(c, t);
+}
+
+/* ---------- 鳥的更新 ---------- */
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+function wirePoint(w, u, out){ return out.set(lerp(w.a.x, w.b.x, u), lerp(w.a.y, w.b.y, u) - Math.sin(u*Math.PI)*w.sag, lerp(w.a.z, w.b.z, u)); }
+const PERCH_WIRES = WIRES.filter(w => Math.abs(w.a.z - w.b.z) < 0.05 && w.a.y > GROUND + 7 && Math.min(w.a.x, w.b.x) < 20 && Math.max(w.a.x, w.b.x) > -30);
+function assignSlots(){
+  const w = pick(PERCH_WIRES), len = Math.abs(w.b.x - w.a.x);
+  const lo = Math.max(0.08, (Math.max(-22, Math.min(w.a.x, w.b.x)) - Math.min(w.a.x, w.b.x))/len), hi = Math.min(0.92, (Math.min(16, Math.max(w.a.x, w.b.x)) - Math.min(w.a.x, w.b.x))/len);
+  let u = lo + R()*Math.max(0, hi - lo - 0.15);
+  for (const b of FLOCK.birds){ b.wire = w; b.u = u; u += (0.18 + R()*0.35)/len; if (R() < 0.15) u += 1.5/len; b.face = R() < 0.7 ? 1 : -1; }
+}
+for (let i = 0; i < 16; i++) FLOCK.birds.push(makeBird('sparrow'));
+assignSlots();
+for (const b of FLOCK.birds){ wirePoint(b.wire, b.u, b.p); b.p.y += 0.04; b.state = 'perched'; b.act = R()*5; }
+function startleBirds(){ if (FLOCK.state === 'perched' && SKY.night < 0.7){ FLOCK.state = 'flying'; FLOCK.timer = 8 + R()*14; for (const b of FLOCK.birds){ b.state = 'fly'; b.v.set((R()-0.5)*3, 3 + R()*2, (R()-0.5)*3); } sfxFlutter(FLOCK.birds[0].p, 10); } }
+for (let i = 0; i < 7; i++){ const b = makeBird('pigeon'); b.p.set(-9 + R()*6, GROUND + 0.15, -13.5 - R()*1.2); b.state = 'ground'; b.yaw = R()*6; b.tx = b.p.x; b.tz = b.p.z; b.act = R()*3; PIGEONS.push(b); }
+for (let i = 0; i < 3; i++){ const b = makeBird('bulbul'); const pp = pick(PERCH_TREE); b.p.copy(pp); b.state = 'perch'; b.act = 1 + R()*4; b.yaw = R()*6; BULBULS.push(b); }
+for (let i = 0; i < 4; i++){ const b = makeBird('swallow'); b.p.set((R()-0.5)*30, GROUND + 6 + R()*6, -6 - R()*10); b.v.set(8, 0, 0); b.tgt = b.p.clone(); SWALLOWS.push(b); }
+EGRET.b = makeBird('egret'); EGRET.b.g.visible = false;
+function updateBirds(t, dt){
+  const night = SKY.night, rain = st.rain, day = night < 0.5;
+  // 麻雀群
+  FLOCK.timer -= dt;
+  if (FLOCK.state === 'perched' && FLOCK.timer < 0){ FLOCK.timer = 25 + R()*50; if (day && rain < 0.5) startleBirds(); }
+  if (TRUCK.active && Math.abs(TRUCK.g.position.x) < 10) startleBirds();
+  if (FLOCK.state === 'flying' && FLOCK.timer < 0){ FLOCK.state = 'landing'; FLOCK.timer = 9; assignSlots(); }
+  FLOCK.tt += dt;
+  const C = _v1.set(FLOCK.cx + 16*Math.sin(FLOCK.tt*0.15), GROUND + 11 + 3.5*Math.sin(FLOCK.tt*0.23), -10 + 5*Math.sin(FLOCK.tt*0.19 + 1));
+  let landed = 0;
+  for (const b of FLOCK.birds){
+    if (b.state === 'perched'){
+      wirePoint(b.wire, b.u, b.p); b.p.y += 0.04;
+      b.act -= dt;
+      if (b.act < 0){ b.act = 1 + R()*6; const r = R(); if (r < 0.25){ b.hop = 0.25; b.u += (R() < 0.5 ? -1 : 1)*0.15/Math.abs(b.wire.b.x - b.wire.a.x); } else if (r < 0.4) b.face *= -1; else if (r < 0.75) b.preen = 1.2; }
+      if (b.hop > 0){ b.hop -= dt; b.p.y += Math.sin((0.25 - b.hop)/0.25*Math.PI)*0.06; }
+      b.preen = Math.max(0, (b.preen || 0) - dt);
+      b.yaw = lerpAng(b.yaw, b.face > 0 ? -Math.PI/2 : Math.PI/2, dt*8); b.pitch = 0.15;
+      b.head.rotation.set(b.preen > 0 ? 0.8*Math.sin(t*9) : 0, b.preen > 0 ? 1.8 : 0.5*Math.sin(t*0.9 + b.seed), b.preen > 0 ? -0.5 : 0);
+      b.tail.rotation.z = 0.15*Math.max(0, Math.sin(t*5 + b.seed))*(R() < 0.02 ? 1 : 0.2);
+      poseBird(b, t, dt, 0, 1); landed++;
+      continue;
+    }
+    if (b.state === 'fly'){
+      const acc = _v2.copy(C).sub(b.p).multiplyScalar(0.7);
+      let n = 0; _v3.set(0, 0, 0);
+      for (const o of FLOCK.birds){ if (o === b || o.state !== 'fly') continue; const d2 = b.p.distanceToSquared(o.p); if (d2 < 1.2){ acc.addScaledVector(_lA.copy(b.p).sub(o.p), 0.9/(d2 + 0.05)); } if (d2 < 9){ _v3.add(o.v); n++; } }
+      if (n) acc.addScaledVector(_v3.multiplyScalar(1/n).sub(b.v), 0.9);
+      acc.x += Math.sin(t*3 + b.seed)*2; acc.y += Math.sin(t*2.3 + b.seed*2)*1.5;
+      b.v.addScaledVector(acc, dt);
+      const sp = b.v.length(); if (sp > 8.5) b.v.multiplyScalar(8.5/sp); if (sp < 4.5) b.v.multiplyScalar(4.5/sp);
+      b.p.addScaledVector(b.v, dt);
+      faceVel(b, dt*8);
+      const burst = Math.sin(t*2.6 + b.seed) > -0.35;   // 麻雀的波浪式飛行：拍幾下、收翅滑一下
+      poseBird(b, t, dt, burst ? 1 : 0, burst ? 0 : 0.75);
+      if (FLOCK.state === 'landing') b.state = 'land';
+    } else if (b.state === 'land'){
+      const s = wirePoint(b.wire, b.u, _v2); s.y += 0.04;
+      const d = _v3.copy(s).sub(b.p), dist = d.length();
+      const want = d.multiplyScalar(Math.min(8, dist*2 + 0.3)/Math.max(dist, 1e-3));
+      b.v.lerp(want, Math.min(1, dt*3));
+      b.p.addScaledVector(b.v, dt);
+      faceVel(b, dt*8);
+      poseBird(b, t, dt, dist < 1 ? 0.6 : 1, 0);
+      if (dist < 0.12 || FLOCK.timer < 0){ b.state = 'perched'; b.p.copy(s); b.v.set(0, 0, 0); }
+    }
+  }
+  if (FLOCK.state === 'landing' && landed === FLOCK.birds.length) FLOCK.state = 'perched';
+  // 鴿子：在對面人行道邊走邊點頭、啄地上；人或狗靠太近就拍翅飛開幾公尺；晚上回巢
+  const cooChance = dt*0.05;
+  for (const b of PIGEONS){
+    b.g.visible = night < 0.6;
+    if (!b.g.visible) continue;
+    if (b.state === 'ground'){
+      b.act -= dt;
+      let threat = null;
+      for (const p of PEDS){ if (p.active && Math.abs(p.x - b.p.x) < 1.6 && Math.abs(p.z - b.p.z) < 1.2){ threat = p; break; } }
+      for (const d of DOGS){ if (Math.abs(d.x - b.p.x) < 2.6 && Math.abs(d.z - b.p.z) < 2.6 && d.v > 0.3) threat = d; }
+      if (Math.abs(WALKER.x - b.p.x) < 1.6 && Math.abs(WALKER.z - b.p.z) < 1.2) threat = WALKER;
+      if (threat){
+        b.state = 'hop'; b.jt = 0; b.j0 = b.p.clone();
+        const dir = Math.sign(b.p.x - (threat.x ?? threat.g.position.x)) || 1;
+        b.j1 = new THREE.Vector3(clamp(b.p.x + dir*(3 + R()*3), -14, 3), GROUND + 0.15, -13.4 - R()*1.3); b.jd = 0.9 + R()*0.5;
+        if (R() < 0.6) sfxFlutter(b.p, 4);
+        continue;
+      }
+      const dx = b.tx - b.p.x, dz = b.tz - b.p.z, dist = Math.hypot(dx, dz);
+      if (b.act < 0){ b.act = 0.8 + R()*2.5; if (R() < 0.6){ b.tx = clamp(b.p.x + (R()-0.5)*1.5, -14, 3); b.tz = clamp(b.p.z + (R()-0.5)*0.8, -14.9, -13.2); } else b.peck = 0.8 + R(); }
+      const walking = dist > 0.05 && !(b.peck > 0);
+      if (walking){ b.p.x += dx/dist*0.35*dt; b.p.z += dz/dist*0.35*dt; b.yaw = lerpAng(b.yaw, Math.atan2(-dz, dx), dt*6); b.bob = (b.bob || 0) + dt*3.2; }
+      b.peck = Math.max(0, (b.peck || 0) - dt);
+      const hb = (b.bob || 0) % 1, thrust = walking ? (hb < 0.3 ? hb/0.3 : 1 - (hb - 0.3)/0.7) : 0;
+      b.head.position.x = 0.05 + 0.025*thrust;
+      const pk = b.peck > 0 ? Math.max(0, Math.sin(t*14)) : 0;
+      b.pitch = -0.15 - 0.5*pk; b.head.rotation.z = -0.6*pk;
+      b.p.y = GROUND + 0.15 + 0.04*b.T.S;
+      poseBird(b, t, dt, 0, 1);
+      if (day && R() < cooChance/PIGEONS.length) sfxCoo(b.p);
+    } else {
+      b.jt += dt/b.jd; const u = Math.min(1, b.jt);
+      b.p.lerpVectors(b.j0, b.j1, u); b.p.y += Math.sin(u*Math.PI)*1.4 + 0.04*b.T.S;
+      b.v.subVectors(b.j1, b.j0); b.v.y = Math.cos(u*Math.PI)*3;
+      faceVel(b, dt*10);
+      poseBird(b, t, dt, 1, 0);
+      if (u >= 1){ b.state = 'ground'; b.tx = b.p.x; b.tz = b.p.z; b.act = 1; }
+    }
+  }
+  // 白頭翁：在窗前的樹枝間跳來跳去，偶爾停到雨遮邊上，離窗很近
+  for (const b of BULBULS){
+    b.g.visible = night < 0.6;
+    if (b.state === 'perch'){
+      b.act -= dt;
+      b.head.rotation.y = Math.round(Math.sin(t*0.8 + b.seed)*2)/2*0.8;   // 頭一頓一頓地轉
+      b.tail.rotation.z = Math.max(0, Math.sin(t*3 + b.seed))*0.35;
+      b.pitch = 0.35;
+      poseBird(b, t, dt, 0, 1);
+      if (b.act < 0 && rain < 0.6){ b.state = 'flit'; b.jt = 0; b.j0 = b.p.clone(); b.j1 = pick(PERCH_TREE).clone(); b.jd = 0.4 + b.j0.distanceTo(b.j1)*0.12; b.act = 2 + R()*7;
+        if (audio && day && R() < 0.5) chirp(audio, audio.ac.currentTime + 0.05, clamp(panOf(b.p), -0.9, 0.9)); }
+    } else {
+      b.jt += dt/b.jd; const u = Math.min(1, b.jt);
+      b.p.lerpVectors(b.j0, b.j1, u); b.p.y += Math.sin(u*Math.PI)*0.35;
+      b.v.subVectors(b.j1, b.j0); b.v.y = Math.cos(u*Math.PI)*1.5;
+      faceVel(b, dt*14); poseBird(b, t, dt, 1, 0);
+      if (u >= 1){ b.state = 'perch'; b.p.copy(b.j1); }
+    }
+  }
+  // 燕子：白天、沒下雨時在街上低空穿梭
+  for (const b of SWALLOWS){
+    b.g.visible = day && rain < 0.3;
+    if (!b.g.visible) continue;
+    if (b.p.distanceTo(b.tgt) < 2 || R() < dt*0.3) b.tgt.set((R()-0.5)*44, GROUND + 3 + R()*10, -5 - R()*14);
+    const want = _v2.copy(b.tgt).sub(b.p).normalize().multiplyScalar(11);
+    b.v.lerp(want, Math.min(1, dt*1.8)); b.p.addScaledVector(b.v, dt);
+    faceVel(b, dt*10);
+    const glide = Math.sin(t*1.7 + b.seed) > 0.3;
+    poseBird(b, t, dt, glide ? 0 : 1, glide ? 0.35 : 0);
+  }
+  // 白鷺鷥：白天偶爾一隻從高空慢慢飛過
+  const E = EGRET;
+  if (!E.active && t > E.next && day && rain < 0.3){ E.active = true; const dir = R() < 0.5 ? 1 : -1; E.b.p.set(-170*dir, GROUND + 26 + R()*10, -40 - R()*30); E.b.v.set(6.5*dir, 0, 0); E.b.g.visible = true; }
+  if (E.active){
+    const b = E.b; b.p.addScaledVector(b.v, dt); b.p.y += Math.sin(t*0.4)*0.02; faceVel(b, 1);
+    const flap = (t % 5) < 3; poseBird(b, t, dt, flap ? 1 : 0, 0);
+    if (Math.abs(b.p.x) > 175){ E.active = false; b.g.visible = false; E.next = t + 120 + R()*180; }
+  }
+}
+// 鳥和狗的聲音
+function sfxFlutter(pos, n){
+  if (!audio || st.muted) return;
+  const A = audio, ac = A.ac, at = ac.currentTime, src = ac.createBufferSource(); src.buffer = A.white;
+  const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.7;
+  const g = ac.createGain(), p = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain(); if (p.pan) p.pan.value = panOf(_v3.copy(pos));
+  src.connect(f); f.connect(g); g.connect(p); p.connect(A.outG);
+  const near = 1/(1 + camera.position.distanceToSquared(pos)/80), k = (A.phone ? 0.25 : 0.15)*near;
+  g.gain.setValueAtTime(0, at);
+  for (let i = 0; i < n; i++){ const s = at + i*0.065 + Math.random()*0.02; g.gain.setValueAtTime(k*(1 - i/n*0.6), s); g.gain.exponentialRampToValueAtTime(0.0005, s + 0.05); }
+  src.start(at, Math.random()*3); src.stop(at + n*0.07 + 0.2);
+}
+function sfxBark(pos){
+  if (!audio || st.muted) return;
+  const A = audio, ac = A.ac, near = 1/(1 + camera.position.distanceToSquared(pos)/200), pan = panOf(_v3.copy(pos));
+  const n = 2 + Math.floor(Math.random()*2);
+  for (let i = 0; i < n; i++){
+    const at = ac.currentTime + 0.05 + i*(0.28 + Math.random()*0.1);
+    const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(560, at); o.frequency.exponentialRampToValueAtTime(300, at + 0.13);
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.2;
+    const g = ac.createGain(), p = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain(); if (p.pan) p.pan.value = pan;
+    o.connect(f); f.connect(g); g.connect(p); p.connect(A.outG);
+    const k = (A.phone ? 0.22 : 0.12)*near;
+    g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(k, at + 0.012); g.gain.exponentialRampToValueAtTime(0.0005, at + 0.16);
+    o.start(at); o.stop(at + 0.2);
+  }
+}
+function sfxCoo(pos){
+  if (!audio || st.muted) return;
+  const A = audio, ac = A.ac, at = ac.currentTime + 0.05, o = ac.createOscillator(), g = ac.createGain(), p = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
+  if (p.pan) p.pan.value = panOf(_v3.copy(pos));
+  o.frequency.setValueAtTime(330, at); o.frequency.linearRampToValueAtTime(390, at + 0.25); o.frequency.linearRampToValueAtTime(310, at + 0.7);
+  o.connect(g); g.connect(p); p.connect(A.outG);
+  const k = A.phone ? 0.03 : 0.015;
+  g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(k, at + 0.1); g.gain.setValueAtTime(k, at + 0.25); g.gain.linearRampToValueAtTime(k*0.3, at + 0.35); g.gain.linearRampToValueAtTime(k, at + 0.45); g.gain.linearRampToValueAtTime(0, at + 0.75);
+  o.start(at); o.stop(at + 0.8);
 }
 
 /* ---------- 每一格 ---------- */
@@ -1238,7 +1837,7 @@ function frame(now){
   st.rain += (st.rainT - st.rain) * (1 - Math.exp(-dt/9));
   const rain = st.rain, night = SKY.night;
   // 閃電：雨大時偶爾一下，幾秒後雷聲
-  if (rain > 0.7 && t > st.nextFlash){ st.nextFlash = t + 18 + R()*35; st.flash = 1; const far = R(); thunder(0.6 + far*3.5, 1 - far*0.5); }
+  if (rain > 0.7 && t > st.nextFlash){ st.nextFlash = t + 18 + R()*35; st.flash = 1; const far = R(); thunder(0.6 + far*3.5, 1 - far*0.5); startleBirds(); }
   st.flash = Math.max(0, st.flash - dt*5);
   const fl = st.flash > 0.5 || (st.flash > 0.2 && st.flash < 0.35) ? st.flash : 0;
   const wind = 0.45 + 0.35*Math.sin(t*0.13)*Math.sin(t*0.05 + 1) + rain*0.6;
@@ -1272,6 +1871,8 @@ function frame(now){
 
   updateTraffic(t, dt);
   updatePeds(t, dt);
+  updateDogs(t, dt);
+  updateBirds(t, dt);
 
   // 鏡頭：只轉頭；往下看時上身往窗邊湊，額頭快貼到玻璃。閒置 25 秒慢慢轉回來
   const kx = (keys.has('arrowleft')||keys.has('a') ? 1 : 0) - (keys.has('arrowright')||keys.has('d') ? 1 : 0);
@@ -1310,5 +1911,5 @@ document.getElementById('start').addEventListener('click', () => {
   unlockMedia(); startAudio();
   setUI(true); uiBtn.hidden = false;
 });
-window.__win = { st, look, ACT, scene, camera, LANES, PEDS, TRUCK, leafCount: LEAVES.length };
+window.__win = { st, look, ACT, scene, camera, LANES, PEDS, TRUCK, DOGS, CAT, FLOCK, PIGEONS, BULBULS, SWALLOWS, EGRET, WALKER, STATICS, startleBirds, leafCount: LEAVES.length };
 </script>
