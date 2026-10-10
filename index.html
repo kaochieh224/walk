@@ -905,24 +905,41 @@ scene.add(glow);
 
 /* ---------- 腳印 ---------- */
 const FP_MAX = 360;
-const fpMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.18, 0.32).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.03,0.03,0.03), fog:true, transparent:true, opacity:0.85, depthWrite:false }), FP_MAX);
+// 每個腳印各自的深淺 aFade：海浪每刷過一次就淡一些，刷個兩三次才完全消失
+const fpGeo = new THREE.PlaneGeometry(0.2, 0.36).rotateX(-Math.PI/2), fpFade = new THREE.InstancedBufferAttribute(new Float32Array(FP_MAX), 1);
+fpGeo.setAttribute('aFade', fpFade);
+const fpMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.02,0.02,0.02), fog:true, transparent:true, opacity:1, depthWrite:false });
+fpMat.onBeforeCompile = sh => {
+  sh.vertexShader = 'attribute float aFade;\nvarying float vFade;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vFade = aFade;');
+  sh.fragmentShader = 'varying float vFade;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n  gl_FragColor.a *= vFade;');
+};
+const fpMesh = new THREE.InstancedMesh(fpGeo, fpMat, FP_MAX);
 fpMesh.frustumCulled = false;
+const FP_SCALE = matchMedia('(hover: none)').matches ? 1.55 : 1.25;   // 手機畫面上腳印比較小，放大一些才看得到
 const fps = []; let fpHead = 0;
-const M0 = new THREE.Matrix4().makeScale(0,0,0), MT = new THREE.Matrix4(), Q = new THREE.Quaternion(), V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), S1 = new THREE.Vector3(1,1,1);
+const M0 = new THREE.Matrix4().makeScale(0,0,0), MT = new THREE.Matrix4(), Q = new THREE.Quaternion(), V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), S1 = new THREE.Vector3(FP_SCALE, 1, FP_SCALE);
 for (let i=0;i<FP_MAX;i++){ fpMesh.setMatrixAt(i, M0); fps.push(null); }
 scene.add(fpMesh);
 function addFootprint(x, z, yaw){
   if (z > front(x, U.uTime.value)) return;           // 踩在水裡不留
   V1.set(x, height(x,z) + 0.03, z); Q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
   fpMesh.setMatrixAt(fpHead, MT.compose(V1, Q, S1));
-  fps[fpHead] = { x, z, born: U.uTime.value };
+  fps[fpHead] = { x, z, born: U.uTime.value, a: 1, wet: false }; fpFade.setX(fpHead, 1); fpFade.needsUpdate = true;
   fpHead = (fpHead+1) % FP_MAX; fpMesh.instanceMatrix.needsUpdate = true;
 }
+let fpLastT = 0;
 function updateFootprints(t){
-  let dirty = false;
+  const dt = Math.min(0.1, Math.max(0, t - fpLastT)); fpLastT = t;
+  let dirty = false, fade = false;
   for (let i=0;i<FP_MAX;i++){ const f = fps[i]; if (!f) continue;
-    if (f.z > front(f.x, t) - 0.2 || t - f.born > 150){ fps[i] = null; fpMesh.setMatrixAt(i, M0); dirty = true; } }
+    // 浪蓋過的時候慢慢被抹平：每秒淡掉約 30%，浪退了就停在那個深淺
+    if (f.z > front(f.x, t) - 0.2){ f.a -= dt*0.3; fade = true; }
+    const age = t - f.born; let a = f.a * (age > 130 ? Math.max(0, 1 - (age - 130)/20) : 1);   // 很久以前的腳印也慢慢淡掉
+    if (a <= 0.02){ fps[i] = null; fpMesh.setMatrixAt(i, M0); dirty = true; a = 0; fade = true; }
+    else if (age > 130) fade = true;
+    fpFade.setX(i, a); }
   if (dirty) fpMesh.instanceMatrix.needsUpdate = true;
+  if (fade) fpFade.needsUpdate = true;
 }
 
 /* ---------- 雨 ---------- */
