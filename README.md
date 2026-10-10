@@ -20,7 +20,7 @@ Or open `index.html` in a modern browser. It is a single file; three.js loads fr
 | N | New shore (new random seed) |
 | R | Rain on / off (fades in and out) |
 | M | Sound on / off |
-| P | Palette: dusk / rain / night |
+| P | Skip to the next palette (they also cycle on their own: dusk → rain → night, 15 min per loop) |
 | H | Hide / show the UI (also the button top-right) |
 
 On phones and tablets: drag with one finger to orbit, pinch with two fingers to zoom, double-tap to reset the view, and tap the labels bottom-right to toggle rain, sound and palette. Sound starts when you tap *Begin walking*.
