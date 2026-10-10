@@ -21,6 +21,7 @@
 html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(--ui);font-family:var(--serif)}
 #c{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);image-rendering:pixelated;image-rendering:crisp-edges;display:block;touch-action:none;cursor:grab}
 #c:active{cursor:grabbing}
+.hud,#uiBtn{display:none!important}   /* 畫面上不顯示任何按鈕（2026-10-10 使用者要求）；鍵盤 M／O／H 仍有效 */
 .hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding-inline:28px;text-shadow:0 0 2px rgba(0,0,0,.45),0 1px 12px rgba(0,0,0,.5)}
 .hud.bottom{bottom:0;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
 .dist{display:flex;flex-direction:column;gap:6px}
@@ -752,7 +753,7 @@ function startAudio(){
     { const d = knock.getChannelData(0); for (let i = 0; i < d.length; i++){ const t = i/SR; d[i] = (Math.sin(2*Math.PI*190*t) * 0.7 + (Math.random()*2 - 1) * 0.3) * Math.exp(-t/0.018); } }
     const knockG = G(phone ? 0.05 : 0.03); chain(knockG, F('lowpass', phone ? 1400 : 700), fanPan);
     // 房間底噪
-    const roomTone = chain(loop(brown, 2.7), F('lowpass', 240), G(phone ? 0.03 : 0.022)); roomTone.connect(room);
+    const roomTone = chain(loop(brown, 2.7), F('lowpass', 240), G(phone ? 0.008 : 0.006)); roomTone.connect(room);   // 房間底噪壓到幾乎聽不到，不要像一直在吹風
 
     // 窗外：全部經過「窗」這一關（削掉一點高頻），再依頭的方向決定從左還是右來
     const outPan = P(), win = F('lowpass', 7200, 0.5), outG = G(1);
@@ -792,9 +793,9 @@ function audioFrame(t, breeze, sk){
   const ph = (st.angle / (Math.PI*2) * 3) % 1, pulse = Math.pow(0.5 + 0.5*Math.cos((ph - 0.5)*Math.PI*2), 3);
   A.humAM.gain.setTargetAtTime(0.45 + 0.55*pulse, at, 0.08);
   A.humG.gain.setTargetAtTime(A.phone ? 0.012 : 0.008, at, 0.5);
-  A.whG.gain.setTargetAtTime((0.004 + 0.012*pulse) * (A.phone ? 1.5 : 1), at, 0.06);
+  A.whG.gain.setTargetAtTime(0.006*pulse * (A.phone ? 1.5 : 1), at, 0.06);   // 只有葉片掠過時極淡的一下，沒有持續的風聲
   A.whF.frequency.setTargetAtTime((A.phone ? 700 : 340) + 300*pulse, at, 0.06);
-  A.whLG.gain.setTargetAtTime(0.012, at, 0.5);
+  A.whLG.gain.setTargetAtTime(0, at, 0.5);   // 持續的氣流聲拿掉（2026-10-10 使用者：固定的風聲聽起來奇怪）
   // 晃動的小零件：每轉一圈在差不多同一個角度喀啦幾下，偶爾多一聲悶悶的「咚」
   const rev = Math.floor(st.angle / (Math.PI*2) + 0.3);
   if (rev !== A.lastRev){ A.lastRev = rev;
@@ -816,8 +817,8 @@ function audioFrame(t, breeze, sk){
     else { c.lv.gain.setTargetAtTime(0, at, 1.2 + Math.random()*1.8); c.stage = 0; c.next = t + 6 + Math.random()*16; }
   }
   A.cicBedG.gain.setTargetAtTime((0.003 + 0.002*Math.sin(t*0.03))*ck, at, 2);
-  A.rusG.gain.setTargetAtTime((0.002 + 0.012*breeze*breeze)*(A.phone ? 1.4 : 1), at, 0.6);
-  A.trafG.gain.setTargetAtTime(A.phone ? 0.02 : 0.03, at, 2);
+  A.rusG.gain.setTargetAtTime(0.009*Math.pow(Math.max(0, breeze - 0.35)/0.65, 2)*(A.phone ? 1.4 : 1), at, 0.6);   // 只在起風時才沙沙響
+  A.trafG.gain.setTargetAtTime(A.phone ? 0.008 : 0.012, at, 2);
   // 機車：約一兩分鐘一台，8 秒左右從一邊騎到另一邊
   const m = A.moto;
   if (t > m.next){
@@ -869,13 +870,13 @@ function frame(now){
   updateLeaves(t, breeze);
   updateCurtains(t, 0.25 + 0.75*WIND + 0.3*breeze);
 
-  // 鏡頭：只轉不移。閒置 1 分鐘後花最多 30 秒慢慢轉回看吊扇的角度（與海岸相同的節奏）
+  // 鏡頭：只轉不移。閒置 20 秒後花 9～18 秒緩起緩停地轉回看吊扇的角度（2026-10-10 使用者要求）
   const kx = (keys.has('arrowleft')||keys.has('a') ? 1 : 0) - (keys.has('arrowright')||keys.has('d') ? 1 : 0);
   const ky = (keys.has('arrowup')||keys.has('w') ? 1 : 0) - (keys.has('arrowdown')||keys.has('s') ? 1 : 0);
   if (kx || ky){ look.yawT += kx*dt*0.9; look.pitchT += ky*dt*0.7; look.lastIn = now; look.ret = null; clampLook(); }
   const off = Math.max(Math.abs(look.yawT - HOME.yaw)/YAW_SPAN, Math.abs(look.pitchT - HOME.pitch)/(PITCH_MAX - PITCH_MIN));
-  if (!look.ret && off > 0.01 && look.lastIn && now - look.lastIn > 60000 && !drag.size){
-    look.ret = { t0: now, dur: 30000*Math.min(1, off), y0: look.yawT, p0: look.pitchT };
+  if (!look.ret && off > 0.01 && look.lastIn && now - look.lastIn > 20000 && !drag.size){
+    look.ret = { t0: now, dur: 9000 + 9000*Math.min(1, off), y0: look.yawT, p0: look.pitchT };
   }
   if (look.ret){
     const u = Math.min(1, (now - look.ret.t0)/look.ret.dur), e = 0.5 - 0.5*Math.cos(Math.PI*u);
