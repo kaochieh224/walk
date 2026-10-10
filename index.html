@@ -207,18 +207,30 @@ function resize(){
 addEventListener('resize', resize);
 
 /* ---------- 材質 ---------- */
-function patch(mat, wet, struct){
-  mat.customProgramCacheKey = () => 'beach' + (wet ? 'W' : '') + (struct ? 'S' : '');   // 不同變體不能共用同一個編譯結果
+function patch(mat, wet, struct, ruin){
+  mat.customProgramCacheKey = () => 'beach' + (wet ? 'W' : '') + (struct ? 'S' : '') + (ruin ? 'R' : '');   // 不同變體不能共用同一個編譯結果
   mat.onBeforeCompile = s => {
     s.uniforms.uTime = U.uTime; s.uniforms.uSP = U.uSP; s.uniforms.uSQ = U.uSQ;
-    s.vertexShader = 'varying vec3 vWPos;\n' + s.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+    s.vertexShader = 'varying vec3 vWPos;\nvarying vec3 vLPos;\n' + s.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      vLPos = transformed;
       vec4 wp_ = vec4(transformed, 1.0);
       #ifdef USE_INSTANCING
         wp_ = instanceMatrix * wp_;
       #endif
       vWPos = (modelMatrix * wp_).xyz;`);
-    s.fragmentShader = GLSL + s.fragmentShader.replace('#include <opaque_fragment>', `
+    s.fragmentShader = GLSL + 'varying vec3 vLPos;\n' + s.fragmentShader.replace('#include <opaque_fragment>', `
       outgoingLight *= cloudShade(vWPos);
+      ${ruin ? `
+      // 廢墟質感：用大樓自己的座標畫髒污、雨水垂流、樓板下的煙燻、剝落斑塊，倒塌時貼圖跟著走
+      vec2 fp = vec2(vLPos.x + vLPos.z, vLPos.y);
+      float blot = vnoise(fp*0.05 + 7.0)*0.6 + vnoise(fp*0.16 + 2.0)*0.4;
+      float streak = vnoise(vec2(fp.x*0.8, fp.y*0.035)) * vnoise(vec2(fp.x*0.23 + 5.0, fp.y*0.02));
+      float soot = smoothstep(0.0, 1.4, mod(vLPos.y + 0.2, 3.4));
+      float spall = smoothstep(0.7, 0.78, vnoise(fp*0.45 + 11.0));
+      float grit = hash12(floor(fp*2.0));
+      float gr = mix(0.38, 1.3, blot) * (1.0 - 0.6*streak) * mix(0.65, 1.0, soot) * (1.0 - 0.4*spall) * (0.85 + 0.3*grit);
+      gr *= mix(0.6, 1.0, smoothstep(1.0, 14.0, vLPos.y));   // 底部泡水、長青苔變暗
+      outgoingLight *= gr;` : ''}
       ${wet ? `
       float zf = vWPos.z - (shoreZ(vWPos.x) - 9.5);
       outgoingLight *= mix(1.0, 0.7, smoothstep(0.0, 1.2, zf));
@@ -261,24 +273,68 @@ function rockGeo(rng, a, b, c){
 // 廢墟大樓（參考《全面啟動》Limbo 的海岸）：只剩樓板與外圍柱的現代主義骨架，頂部斷裂
 function slabGeo(rng, w, d, floors, intact=false){   // intact：下層段落，頂部不殘缺，上一段才接得上
   const FH = 3.4, H = floors*FH, parts = [];
-  const bx = (sx, sy, sz, x, y, z) => { const g = new THREE.BoxGeometry(sx, sy, sz); g.translate(x, y, z); parts.push(g); };
+  const bx = (sx, sy, sz, x, y, z, rx=0, ry=0, rz=0) => { const g = new THREE.BoxGeometry(sx, sy, sz); if (rx || ry || rz){ g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); } g.translate(x, y, z); parts.push(g); };
   const topCut = () => intact ? H : H - rng()*FH*4;
+  // 崩塌角：從某一層以上，一個角整塊塌掉，越往上缺得越多
+  const cs = rng() < 0.5 ? -1 : 1, czs = rng() < 0.5 ? -1 : 1;
+  const cf = intact || rng() < 0.2 ? floors + 1 : Math.floor(floors*(0.3 + rng()*0.5));
+  const cw0 = w*(0.22 + rng()*0.25), cd = d*(0.4 + rng()*0.4);
+  const cwAt = f => Math.min(w*0.62, cw0*(1 + (f - cf)*0.06) + rng()*w*0.08);
+  // 斷口露出的鋼筋：細桿往外伸、微微下垂
+  const rebar = (x, y, z, dir) => { const n = 2 + Math.floor(rng()*4);
+    for (let i=0;i<n;i++){ const L = 0.8 + rng()*2.2; bx(L, 0.08, 0.08, x + dir*L/2, y + (rng()-0.5)*0.2, z + (rng()-0.5)*2.5, 0, (rng()-0.5)*0.5, -dir*(0.1 + rng()*0.5)); } };
   for (let f=0; f<=floors; f++){
     const y = f*FH;
     if (!intact && f > floors - 4 && rng() < 0.45) {        // 頂部幾層殘缺，但殘塊一定搭在核心筒上，不會懸空
-      const pw = w*(0.35 + rng()*0.5); bx(pw, 0.4, d*(0.4+rng()*0.6), (rng()-0.5)*pw*0.6, y, (rng()-0.5)*d*0.15); continue;
+      const pw = w*(0.35 + rng()*0.5); bx(pw, 0.4, d*(0.4+rng()*0.6), (rng()-0.5)*pw*0.6, y, (rng()-0.5)*d*0.15); rebar(pw/2, y, 0, 1); continue;
     }
-    bx(w, 0.4, d, 0, y, 0);
-    if (rng() < 0.35) bx(w*0.98, FH*0.42, 0.18, 0, y + FH*0.3, (rng()<0.5?-1:1)*d/2);   // 窗下牆
+    // 樓板邊緣不整齊：每層寬度與位置略有出入
+    const ew = w*(0.9 + rng()*0.1), ex = (rng()-0.5)*(w - ew);
+    if (f >= cf){
+      const cw = cwAt(f), keepW = ew - cw, xe = cs*(ew/2 - cw) + ex;   // xe：斷口位置
+      bx(keepW, 0.4, d, ex - cs*cw/2, y, 0);                         // 沒塌的部分
+      bx(cw, 0.4, d - cd, xe + cs*cw/2, y, -czs*cd/2);              // 塌角旁邊還留著的一條
+      if (rng() < 0.35){ const L = cw*(0.5 + rng()*0.4), a = 0.35 + rng()*0.7;   // 斷掉垂下來的樓板，一邊還掛在斷口
+        bx(L, 0.35, cd*(0.5 + rng()*0.4), xe + cs*Math.cos(a)*L/2, y - Math.sin(a)*L/2, czs*(d/2 - cd/2), 0, 0, -cs*a); }
+      if (rng() < 0.6) rebar(xe, y, czs*(d/2 - cd/2), cs);
+    } else if (!intact && f > 1 && rng() < 0.22){   // 樓板被咬掉一塊：從某一側缺一截，斷口露鋼筋
+      const bs = rng() < 0.5 ? -1 : 1, bw = w*(0.1 + rng()*0.3), bd = d*(0.3 + rng()*0.7), zs = rng() < 0.5 ? -1 : 1;
+      bx(ew - bw, 0.4, d, ex - bs*bw/2, y, 0);
+      if (bd < d*0.95) bx(bw, 0.4, d - bd, ex + bs*(ew/2 - bw/2), y, -zs*bd/2);   // 被咬那一截剩下的半條
+      rebar(ex + bs*(ew/2 - bw), y, zs*(d/2 - bd/2), bs);
+    } else {
+      bx(ew, 0.4, d, ex, y, 0);
+      if (!intact && rng() < 0.12){ const hw = w*(0.15 + rng()*0.2), hx = (rng()<0.5?-1:1)*(w*0.3);   // 樓板破洞往下垂
+        bx(hw, 0.3, d*0.3, hx, y - 0.6, (rng()<0.5?-1:1)*d*0.3, (rng()-0.5)*0.5, 0, (rng()-0.5)*0.6); }
+    }
+    if (rng() < 0.35){ const lw = w*(0.25 + rng()*0.6); bx(lw, FH*0.42, 0.18, (rng()-0.5)*(w - lw), y + FH*0.3, (rng()<0.5?-1:1)*d/2); }   // 殘留的窗下牆，長短不一
   }
+  const inCorner = (x, z) => cs*x > w/2 - cw0 - 0.6 && czs*z > d/2 - cd - 0.6;
+  const col = (x, z) => {
+    let h = topCut();
+    if (inCorner(x, z) && cf <= floors) h = Math.min(h, cf*FH*(0.85 + rng()*0.25));   // 塌角裡的柱子斷在塌落的那層附近
+    else if (!intact && rng() < 0.08) h *= 0.4 + rng()*0.5;                              // 少數柱子中段斷掉
+    bx(0.55, h, 0.55, x, h/2, z);
+    if (h < H - FH && rng() < 0.6) rebar(x, h, z, rng() < 0.5 ? -1 : 1);
+  };
   const nx = Math.max(2, Math.round(w/4.5)), nz = Math.max(2, Math.round(d/4.5));
-  for (let i=0;i<=nx;i++) for (const sz of [-1,1]){ const h = topCut(); bx(0.55, h, 0.55, -w/2 + i*w/nx, h/2, sz*d/2); }
-  for (let j=1;j<nz;j++) for (const sx of [-1,1]){ const h = topCut(); bx(0.55, h, 0.55, sx*w/2, h/2, -d/2 + j*d/nz); }
+  for (let i=0;i<=nx;i++) for (const sz of [-1,1]) if (i === 0 || i === nx || intact || rng() > 0.18) col(-w/2 + i*w/nx + (rng()-0.5)*0.8, sz*d/2);   // 角柱一定在，其他柱子偶爾整根不見
+  for (let j=1;j<nz;j++) for (const sx of [-1,1]) if (intact || rng() > 0.18) col(sx*w/2, -d/2 + j*d/nz + (rng()-0.5)*0.8);
   bx(w*0.3, H, d*0.3, 0, H/2, 0);          // 核心筒：一路通到頂，所有樓板都有支撐
+  // 外牆殘片：一片片帷幕板還掛著，有的翹起剝落
+  const np = Math.floor(floors*(0.3 + rng()*0.5));
+  for (let i=0;i<np;i++){ const f = Math.floor(rng()*floors), pw = 2 + rng()*6, side = rng()<0.5 ? -1 : 1, peel = rng() < 0.3 ? (rng()-0.5)*0.5 : 0;
+    const px = (rng()-0.5)*(w - pw);
+    if (f >= cf && cs*px > w/2 - cw0 - pw) continue;
+    bx(pw, FH*(0.6 + rng()*0.35), 0.15, px, f*FH + FH*0.5, side*(d/2 + 0.1), peel, 0, (rng()-0.5)*0.12); }
+  // 牆腳的瓦礫堆（塌角那一側多一些）
+  if (!intact){ const nr = 4 + Math.floor(rng()*6);
+    for (let i=0;i<nr;i++){ const s = 1 + rng()*3.5, rx = cs*(w*0.2 + rng()*w*0.5), rz = (rng()-0.5)*d*1.2;
+      bx(s*(1 + rng()), s*0.6, s*(0.8 + rng()), rx, s*0.2, rz, rng()*0.6, rng()*3, rng()*0.6); } }
   // 科幻量體：頂部天線桅杆、側面懸挑的方塊
   const nm = Math.floor(rng()*3);
-  for (let i=0;i<nm;i++){ const mh = H*(0.15 + rng()*0.4); bx(0.7, mh, 0.7, (rng()-0.5)*w*0.24, H + mh/2 - FH*2, (rng()-0.5)*d*0.24); }   // 桅杆立在核心筒上
-  if (rng() < 0.5){ const cy = H*(0.4 + rng()*0.45), cw = w*(0.4+rng()*0.4); bx(cw, FH*2.5, d*0.6, (rng()<0.5?-1:1)*(w/2 + cw*0.3), cy, 0); }
+  for (let i=0;i<nm;i++){ const mh = H*(0.15 + rng()*0.4); bx(0.7, mh, 0.7, (rng()-0.5)*w*0.24, H + mh/2 - FH*2, (rng()-0.5)*d*0.24, (rng()-0.5)*0.12, 0, (rng()-0.5)*0.12); }   // 桅杆立在核心筒上，有點歪
+  if (rng() < 0.5){ const cy = H*(0.4 + rng()*0.45), cw = w*(0.4+rng()*0.4); bx(cw, FH*2.5, d*0.6, -cs*(w/2 + cw*0.3), cy, 0, 0, 0, cs*(rng()*0.08)); }
   const g = mergeGeometries(parts); parts.forEach(p => p.dispose()); return g;
 }
 // 建築造型隨機：板樓、退縮、雙塔、圓塔（螺旋扭轉樓已取消）
@@ -445,7 +501,7 @@ function humanShip(rng){
   k.build(grp);
   return { grp, L, H };
 }
-const towerMat = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.5,0.5,0.5), flatShading:true }), false, true);
+const towerMat = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.56,0.56,0.56), flatShading:true }), false, true, true);
 const fallers = [];   // 會崩塌倒進海裡的大樓
 
 const chunks = new Map();
