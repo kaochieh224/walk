@@ -31,7 +31,7 @@ A specific shore can be opened with a seed in the URL hash, e.g. `index.html#s12
 
 **A slow afternoon** — lying in bed looking up at a turning ceiling fan while afternoon sun comes through the window. Same low-res dithered renderer, in natural colour. Live: https://kaochieh224.github.io/walk/fan/ (drag to turn your head; M sound, O reset view, H hide UI).
 
-**By the window** — sitting at a table by a big aluminium window on the second floor, looking out at a tree-lined Taiwanese street: banyans and trimmed street trees, scooters and taxis stopping at the lights, people crossing, afternoon thunderstorms, dusk and night, and the garbage truck playing *Für Elise* at 7:20 pm. Live: https://kaochieh224.github.io/walk/window/ (drag to look around, look down to lean towards the glass; R rain, T later, M sound, O reset view, H hide UI).
+**By the window** — sitting at a table by a big aluminium window on the second floor, looking out at a tree-lined Taiwanese street: banyans and trimmed street trees, scooters and taxis stopping at the lights, birds wheeling in the distance, afternoon thunderstorms, dusk and night, and the garbage truck playing *Für Elise* at 7:20 pm. Live: https://kaochieh224.github.io/walk/window/ (drag to look around, look down to lean towards the glass; R rain, T later, M sound, O reset view, H hide UI).
 
 ## Files
 
