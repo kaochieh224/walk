@@ -2278,7 +2278,7 @@ document.getElementById('start').addEventListener('click', () => {
   st.started = true;
   document.getElementById('intro').classList.add('gone');
   unlockMedia(); startAudio();
-  setUI(false); uiBtn.hidden = false;   // 使用者要求：一開始就把 UI 收起來，只留 Show UI
+  setUI(false); uiBtn.hidden = true;   // 使用者要求：畫面上不留任何按鈕（電腦上仍可用 H 鍵叫出）
 });
 window.__win = { st, look, ACT, scene, camera, LANES, PEDS, TRUCK, DOGS, CAT, FLOCK, PIGEONS, BULBULS, SWALLOWS, EGRET, WALKER, STATICS, startleBirds, leafCount: LEAVES.length };
 </script>
