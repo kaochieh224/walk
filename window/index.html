@@ -703,13 +703,64 @@ const LAMPS = [];
   box(0.25, 1.0, 0.06, std(0x1f7a4a), XST.x1 + 0.45, GROUND + 3.4, ROAD1 - 0.4);
   // 對面騎樓前停的一排機車、路邊停的車
   const scootC = [0xdcdad4, 0x2a2a2c, 0x8a3a34, 0x4a6a8a, 0x9aa0a2, 0xc9b88a, 0x5a7a6a, 0x3a3a3c];
-  // 停著的機車：輪子、後車身、座墊、腳踏板、前擋、龍頭、後照鏡；車頭朝馬路
+  // 停著的機車：照使用者給的台灣速克達參考圖（GP、新名流、勁戰、WOO、Gogoro…），側面輪廓用曲線畫、擠出寬度再倒圓角
+  // 一台 = 前擋（前面那片弧形的車殼，大燈嵌在上面）、低低的腳踏板、往後翹起的後車殼、圓弧座墊、龍頭、後照鏡、兩個小輪子
+  // 樣板只做一次，之後每台複製、轉向、上色，全部合成一個網格
+  const SC_T = (() => {
+    const V = (u, v) => new THREE.Vector2(u, v);
+    const ext = (pts, w, bev, closedSpline = true) => {   // pts：側面輪廓（u＝往車頭、v＝往上），整圈用平滑曲線串起來
+      const sh = new THREE.Shape(); sh.moveTo(pts[0].x, pts[0].y); sh.splineThru(pts.slice(1).concat([pts[0]]));
+      const g = new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2, curveSegments: 5 });
+      g.translate(0, 0, -w/2); return g;
+    };
+    const cyl = (r, w, u, v, x = 0) => new THREE.CylinderGeometry(r, r, w, 14).rotateX(Math.PI/2).translate(u, v, x).toNonIndexed();
+    const styles = [
+      // 運動款（GP、勁戰、JET）：尖一點的前擋、後車殼翹高
+      { apron: [V(0.36, 0.26), V(0.6, 0.34), V(0.74, 0.62), V(0.7, 0.92), V(0.56, 1.06), V(0.46, 0.98), V(0.42, 0.62), V(0.34, 0.34)],
+        rear: [V(-0.24, 0.3), V(-0.2, 0.6), V(-0.36, 0.7), V(-0.72, 0.74), V(-0.9, 0.84), V(-0.86, 0.6), V(-0.62, 0.34), V(-0.4, 0.26)],
+        seat: [V(-0.22, 0.7), V(-0.4, 0.8), V(-0.7, 0.82), V(-0.86, 0.88), V(-0.82, 0.78), V(-0.5, 0.72)] },
+      // 復古圓潤款（新名流、WOO、Nice、Many）：圓弧前擋、圓屁股
+      { apron: [V(0.36, 0.26), V(0.62, 0.36), V(0.72, 0.66), V(0.64, 0.98), V(0.5, 1.06), V(0.44, 0.9), V(0.42, 0.6), V(0.34, 0.34)],
+        rear: [V(-0.24, 0.3), V(-0.2, 0.58), V(-0.4, 0.68), V(-0.74, 0.68), V(-0.86, 0.6), V(-0.82, 0.4), V(-0.6, 0.3), V(-0.4, 0.26)],
+        seat: [V(-0.2, 0.66), V(-0.42, 0.76), V(-0.72, 0.76), V(-0.84, 0.7), V(-0.74, 0.66), V(-0.4, 0.66)] },
+      // 電動款（Gogoro）：一整顆圓弧的後車殼、方一點的前擋
+      { apron: [V(0.38, 0.26), V(0.6, 0.3), V(0.7, 0.6), V(0.66, 0.96), V(0.52, 1.04), V(0.46, 0.9), V(0.44, 0.56), V(0.36, 0.32)],
+        rear: [V(-0.22, 0.28), V(-0.22, 0.62), V(-0.5, 0.7), V(-0.84, 0.68), V(-0.92, 0.52), V(-0.8, 0.32), V(-0.5, 0.26)],
+        seat: [V(-0.24, 0.66), V(-0.5, 0.74), V(-0.82, 0.74), V(-0.9, 0.68), V(-0.5, 0.66)] },
+    ];
+    return styles.map(st => {
+      const parts = [];
+      parts.push([ext(st.apron, 0.3, 0.05), 'body']);
+      parts.push([ext(st.rear, 0.3, 0.05), 'body']);
+      parts.push([ext(st.seat, 0.26, 0.04), 'seat']);
+      parts.push([ext([V(-0.26, 0.22), V(0.38, 0.22), V(0.4, 0.3), V(-0.24, 0.3)], 0.28, 0.03), 'dark']);          // 腳踏板
+      parts.push([ext([V(-0.42, 0.16), V(-0.2, 0.2), V(-0.24, 0.36), V(-0.6, 0.38), V(-0.66, 0.24)], 0.22, 0.03), 'dark']);   // 引擎、後搖臂
+      parts.push([cyl(0.2, 0.1, 0.62, 0.2), 'tire'], [cyl(0.2, 0.1, -0.62, 0.2), 'tire']);
+      parts.push([cyl(0.11, 0.12, 0.62, 0.2), 'rim'], [cyl(0.11, 0.12, -0.62, 0.2), 'rim']);
+      parts.push([ext([V(0.48, 0.42), V(0.66, 0.44), V(0.82, 0.3), V(0.78, 0.26), V(0.62, 0.38), V(0.5, 0.36)], 0.12, 0.02), 'body']);   // 前土除
+      parts.push([new THREE.CylinderGeometry(0.025, 0.025, 0.6, 6).rotateX(-0.35).translate(0.58, 0.62, 0).toNonIndexed(), 'dark']);   // 前叉
+      parts.push([ext([V(0.38, 0.98), V(0.56, 1.02), V(0.6, 1.14), V(0.46, 1.16), V(0.36, 1.1)], 0.34, 0.04), 'body']);   // 龍頭蓋
+      parts.push([new THREE.CylinderGeometry(0.018, 0.018, 0.7, 6).rotateX(Math.PI/2).translate(0.44, 1.12, 0).toNonIndexed(), 'dark']);   // 把手
+      for (const x of [-0.24, 0.24]){
+        parts.push([new THREE.CylinderGeometry(0.008, 0.008, 0.22, 4).translate(0.42, 1.24, x).toNonIndexed(), 'dark']);
+        parts.push([new THREE.SphereGeometry(0.05, 8, 5).scale(0.4, 0.7, 1).translate(0.42, 1.36, x*1.08).toNonIndexed(), 'dark']);   // 後照鏡
+      }
+      parts.push([new THREE.SphereGeometry(0.075, 10, 6).scale(0.5, 0.7, 1).translate(0.7, 0.88, 0).toNonIndexed(), 'lamp']);   // 大燈
+      parts.push([new THREE.SphereGeometry(0.05, 8, 5).scale(0.4, 0.6, 1.6).translate(-0.88, 0.62, 0).toNonIndexed(), 'tail']);   // 尾燈
+      for (const [g] of parts){ for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); }
+      return parts;
+    });
+  })();
+  const SCOOT = [], _sc = new THREE.Color(), SC_FIX = { seat: 0x232325, dark: 0x3a3b3e, tire: 0x1c1c1e, rim: 0x9a9ea2, lamp: 0xe8e8e0, tail: 0x9a2a24 };
   function parkedScooter(x, y, z, s, col){
-    for (const k of [0.62, -0.62]) dbox(0.11, 0.36, 0.36, x, y + 0.18, z + s*k, 0x1e1e20);
-    dbox(0.34, 0.42, 0.78, x, y + 0.5, z - s*0.3, col); dbox(0.3, 0.1, 0.66, x, y + 0.76, z - s*0.25, 0x262628);
-    dbox(0.3, 0.1, 0.42, x, y + 0.28, z + s*0.22, col); dbox(0.34, 0.72, 0.16, x, y + 0.62, z + s*0.5, col);
-    dbox(0.62, 0.05, 0.06, x, y + 1.0, z + s*0.52, 0x262628); dbox(0.2, 0.15, 0.16, x, y + 0.96, z + s*0.6, col);
-    for (const k of [-0.24, 0.24]) dbox(0.07, 0.05, 0.02, x + k, y + 1.16, z + s*0.5, 0x262628);
+    const parts = SC_T[R() < 0.45 ? 0 : R() < 0.75 ? 1 : 2], m = new THREE.Matrix4().makeRotationY(s > 0 ? -Math.PI/2 : Math.PI/2).setPosition(x, y, z), yaw = (R() - 0.5)*0.12;
+    m.multiply(new THREE.Matrix4().makeRotationY(yaw));
+    for (const [g0, key] of parts){
+      const g = g0.clone().applyMatrix4(m), n = g.attributes.position.count, c = new Float32Array(n*3);
+      _sc.set(key === 'body' ? col : SC_FIX[key]);
+      for (let i = 0; i < n; i++){ c[i*3] = _sc.r; c[i*3+1] = _sc.g; c[i*3+2] = _sc.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(c, 3)); SCOOT.push(g);
+    }
   }
   const sg = mergeGeometries([new THREE.BoxGeometry(0.36, 0.38, 1.5).translate(0, -0.08, 0), new THREE.BoxGeometry(0.3, 0.14, 0.62).translate(0, 0.17, -0.2), new THREE.BoxGeometry(0.32, 0.55, 0.12).translate(0, 0.1, 0.62)]);   // 車身、座墊、前擋
   for (let x = -70; x < 70; x += 0.62 + R()*0.3){
@@ -722,6 +773,7 @@ const LAMPS = [];
     if (R() < 0.25) continue;
     parkedScooter(x, GROUND, -4.85, -1, pick(scootC));
   }
+  { const m = new THREE.Mesh(mergeGeometries(SCOOT), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.15 })); m.castShadow = m.receiveShadow = true; scene.add(m); SCOOT.length = 0; }
 }
 
 /* ---------- 街道家具：人孔蓋、機車待轉區、消防栓、公車站牌、斑馬線口的矮柱 ---------- */
