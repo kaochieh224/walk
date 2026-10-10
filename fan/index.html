@@ -53,7 +53,7 @@ button.k:focus-visible{outline:1px solid var(--ui);outline-offset:2px}
 
 <canvas id="c" aria-label="Lying in bed, looking up at a ceiling fan"></canvas>
 <div class="hud bottom" id="hud" hidden>
-  <div class="dist"><div class="num"><span id="clock">2:00</span><em>pm</em></div><small id="fanLbl">FAN · 2</small></div>
+  <div class="dist"><div class="num"><span id="clock">2:00</span><em>pm</em></div><small>AFTERNOON</small></div>
   <div class="keys" id="keys"></div>
 </div>
 <button id="uiBtn" type="button" hidden>Hide UI</button>
@@ -429,14 +429,14 @@ const dustMat = new THREE.ShaderMaterial({
 }
 
 /* ---------- 狀態與操作 ---------- */
-const st = { started:false, uiOn:true, muted:false, fan:2, spin:0, angle:0, sunK:1, sunTarget:1, nextCloud:30, cloudUntil:0, pal:0, palT:0, palBoost:false, clock0: 14*60 };
-const FAN_RPS = [0, 0.75, 1.35, 2.1];   // 每秒轉幾圈：關、一段、二段、三段
+const st = { started:false, uiOn:true, muted:false, spin:0.12, angle:0, sunK:1, sunTarget:1, nextCloud:30, cloudUntil:0, pal:0, palT:0, palBoost:false, clock0: 14*60 };
+const FAN_RPS = 0.12;   // 固定一種速度，非常緩慢：約 8 秒轉一圈
+const WIND = 0.35;      // 慢速吊扇的風：拿來帶動窗簾、灰塵和風聲
 const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
 function clampLook(){ look.yawT = THREE.MathUtils.clamp(look.yawT, -1.95, 1.95); look.pitchT = THREE.MathUtils.clamp(look.pitchT, -0.2, 1.56); }
 
-const KEYMAP = { f:'fan', m:'sound', p:'palette', o:'reset', '0':'reset', h:'ui' };
+const KEYMAP = { m:'sound', p:'palette', o:'reset', '0':'reset', h:'ui' };
 const ACT = {
-  fan(){ st.fan = (st.fan + 1) % 4; renderKeys(); },
   sound(){ st.muted = !st.muted; if (audio) audio.master.gain.value = st.muted ? 0 : 0.9; resumeAudio(); renderKeys(); },
   palette(){ setPalette((st.pal + 1) % PALS.length); },
   reset(){ look.yawT = HOME.yaw; look.pitchT = HOME.pitch; look.ret = null; },
@@ -471,14 +471,11 @@ canvas.addEventListener('dblclick', () => ACT.reset());
 
 const keysEl = document.getElementById('keys');
 keysEl.addEventListener('click', e => { const b = e.target.closest('button[data-a]'); if (b && ACT[b.dataset.a]) ACT[b.dataset.a](); });
-const fanLbl = document.getElementById('fanLbl');
 function renderKeys(){
   const B = (a, k, label, off) => `<button class="k" type="button" data-a="${a}"><b>${k}</b><i class="${off?'off':''}">${label}</i></button>`;
   keysEl.innerHTML = `<div class="row"><b>DRAG</b><i>look around</i></div>` + B('reset','O','reset view') +
-    B('fan','F', st.fan ? `fan · speed ${st.fan}` : 'fan · off', !st.fan) +
     B('sound','M',`sound ${st.muted?'off':'on'}`, st.muted) +
     B('palette','P',`palette · ${PALS[st.pal].en.toLowerCase()}`);
-  fanLbl.textContent = st.fan ? `FAN · ${st.fan}` : 'FAN · OFF';
 }
 
 // 色盤和海岸一樣自動漸變：四組輪流，一圈 15 分鐘；P 用十倍速轉到下一組
@@ -496,7 +493,7 @@ function updatePalette(dt){
 }
 function setPalette(i){ st.palT = ((i - 1 + PALS.length) % PALS.length)*PAL_SEG + PAL_HOLD; st.palBoost = true; }
 
-/* ---------- 聲音：吊扇的風聲與馬達聲、窗外的蟬和鳥 ---------- */
+/* ---------- 聲音：吊扇的風聲與馬達聲、窗外的蟬（不放鳥叫） ---------- */
 let audio = null;
 function resumeAudio(){ if (audio && audio.ac.state !== 'running') audio.ac.resume().catch(() => {}); }
 ['touchend','click','keydown'].forEach(ev => addEventListener(ev, () => { if (st.started) resumeAudio(); }, { capture:true, passive:true }));
@@ -546,21 +543,10 @@ function startAudio(){
     const rusF = ac.createBiquadFilter(); rusF.type = 'highpass'; rusF.frequency.value = 2600;
     const rusG = ac.createGain(); rusG.gain.value = 0;
     loop(white, 2.2).connect(rusF); rusF.connect(rusG); rusG.connect(master);
-    audio = { ac, master, phone, airG, airF, lfo, lfoG, hum, humG, cicG, rusG, white, nextBird: 6 };
+    audio = { ac, master, phone, airG, airF, lfo, lfoG, hum, humG, cicG, rusG, white };
     resumeAudio();
   } catch (err) { audio = null; }
 }
-// 偶爾一隻鳥叫：幾個快速上下滑的音
-function bird(){
-  const ac = audio.ac, at = ac.currentTime + 0.05, n = 2 + Math.floor(Math.random()*4), base = 2600 + Math.random()*1400;
-  for (let i = 0; i < n; i++){
-    const o = ac.createOscillator(), g = ac.createGain(), t0 = at + i*(0.13 + Math.random()*0.08);
-    o.type = 'sine'; o.frequency.setValueAtTime(base*(0.9 + Math.random()*0.2), t0); o.frequency.exponentialRampToValueAtTime(base*(1.25 + Math.random()*0.3), t0 + 0.07);
-    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.018*(audio.phone ? 1.6 : 1), t0 + 0.015); g.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.1);
-    o.connect(g); g.connect(audio.master); o.start(t0); o.stop(t0 + 0.12);
-  }
-}
-
 /* ---------- 每一格 ---------- */
 let last = performance.now(), T0 = last;
 const clockEl = document.getElementById('clock'); let lastMin = -1;
@@ -569,11 +555,10 @@ function frame(now){
   const t = (now - T0)/1000;
 
   // 吊扇：開機慢慢加速、關掉後滑行很久才停
-  const target = FAN_RPS[st.fan], tau = target > st.spin ? 2.4 : 7;
-  st.spin += (target - st.spin) * (1 - Math.exp(-dt/tau));
+  st.spin = FAN_RPS;
   st.angle = (st.angle + st.spin*Math.PI*2*dt) % (Math.PI*2*3);
   rotor.rotation.y = st.angle;
-  const wob = 0.005 * st.spin/2.1;
+  const wob = 0.0015;
   fan.rotation.x = Math.sin(t*st.spin*Math.PI*2*0.5) * wob; fan.rotation.z = Math.cos(t*st.spin*Math.PI*2*0.5 + 0.7) * wob;
 
   // 陽光：方向隨午後慢慢偏移；偶爾有雲飄過，光斑和光束一起暗下來
@@ -587,9 +572,9 @@ function frame(now){
   bounce.intensity = 1.6 * (0.25 + 0.75*st.sunK);
   hemi.intensity = 1.25 + 0.3*st.sunK;
   beamMat.uniforms.uI.value = st.sunK; beamMat.uniforms.uT.value = t;
-  dustMat.uniforms.uI.value = st.sunK; dustMat.uniforms.uT.value = t; dustMat.uniforms.uFan.value = st.spin/2.1;
+  dustMat.uniforms.uI.value = st.sunK; dustMat.uniforms.uT.value = t; dustMat.uniforms.uFan.value = WIND;
   updateLeaves(t, breeze);
-  updateCurtains(t, 0.25 + 0.75*st.spin/2.1 + 0.3*breeze);
+  updateCurtains(t, 0.25 + 0.75*WIND + 0.3*breeze);
 
   // 鏡頭：只轉不移。閒置 1 分鐘後花最多 30 秒慢慢轉回看吊扇的角度（與海岸相同的節奏）
   const kx = (keys.has('arrowleft')||keys.has('a') ? 1 : 0) - (keys.has('arrowright')||keys.has('d') ? 1 : 0);
@@ -615,14 +600,13 @@ function frame(now){
   updatePalette(dt);
 
   if (audio && !st.muted){
-    const at = audio.ac.currentTime, s = st.spin/2.1;
+    const at = audio.ac.currentTime, s = WIND;
     audio.airG.gain.setTargetAtTime(0.11*s*(audio.phone ? 1.4 : 1), at, 0.3);
     audio.airF.frequency.setTargetAtTime((audio.phone ? 750 : 380) + 380*s, at, 0.3);
-    audio.lfo.frequency.setTargetAtTime(Math.max(0.5, st.spin*3), at, 0.2); audio.lfoG.gain.setTargetAtTime(0.35*s, at, 0.3);
+    audio.lfo.frequency.setTargetAtTime(Math.max(0.2, st.spin*3), at, 0.2); audio.lfoG.gain.setTargetAtTime(0.35*s, at, 0.3);
     audio.hum.frequency.setTargetAtTime(96 + 10*s, at, 0.5); audio.humG.gain.setTargetAtTime(0.02*Math.min(1, s*3), at, 0.4);
     audio.cicG.gain.setTargetAtTime((0.006 + 0.006*(0.5 + 0.5*Math.sin(t*0.05)))*(audio.phone ? 1.5 : 1), at, 1.5);
     audio.rusG.gain.setTargetAtTime(0.004 + 0.01*breeze, at, 0.8);
-    if (t > audio.nextBird){ bird(); audio.nextBird = t + 8 + Math.random()*22; }
   }
 
   // HUD：從下午兩點開始，跟著真實時間走
