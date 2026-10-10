@@ -70,7 +70,7 @@ const RX = 3.4, RZ1 = 4.6, RH = 3.0, WT = 0.3;
 const WIN = { x0:-1.2, x1:1.2, y0:0.9, y1:2.72 };   // 窗洞：照使用者的圖一（吊扇房間那扇）：兩扇推拉窗、上方氣窗
 const TRANSOM = 2.24, FZ = -0.15;                    // 氣窗橫料高度、窗框所在的深度
 const GROUND = -3.8;                                 // 街面（二樓）
-const EYE = new THREE.Vector3(0, 1.15, 2.4);      // 沒有桌子，直接坐在窗前椅子上的眼睛（使用者的圖二，第一人稱）
+const EYE = new THREE.Vector3(0.15, 1.12, 1.15);      // 沒有桌子，直接坐在窗前椅子上的眼睛（使用者的圖二，第一人稱）
 const HOME = { yaw: 0, pitch: 0.12 };
 const YAW_SPAN = 0.85, PITCH_MIN = -0.78, PITCH_MAX = 0.42;
 // 街道配置（z）：近側人行道 0～-4、路面 -4～-13（兩側停車帶、雙向各一車道）、對面人行道 -13～-16.5、騎樓到 -19.5
@@ -231,7 +231,7 @@ box(RX*2, 0.06, 0.05, M.wall, 0, RH-0.03, 0.025); box(RX*2, 0.09, 0.02, M.wall, 
     box(0.02, 0.12, 0.03, M.aluDark, x1 - 0.05, ys, z + 0.03);                // 勾鎖
   };
   sash(WIN.x0 + 0.05, 0.04, FZ + 0.03);
-  sash(-0.04, WIN.x1 - 0.05, FZ - 0.03);
+  sash(WIN.x0 + 0.1, 0.07, FZ - 0.03);   // 右扇整個推到左邊，右半邊打開（使用者要窗戶打開）
   // 窗台：大理石，從窗框伸進室內一點
   box(W + 0.4, 0.04, 0.36, M.marble, 0, WIN.y0 - 0.02, 0.05);
 }
@@ -311,7 +311,7 @@ const glassMat = new THREE.ShaderMaterial({
 });
 {
   const pane = (x0, x1, y0, y1, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(x1-x0, y1-y0), glassMat); m.position.set((x0+x1)/2, (y0+y1)/2, z); m.renderOrder = 2; scene.add(m); return m; };
-  pane(WIN.x0 + 0.05, 0.04, WIN.y0 + 0.05, TRANSOM, FZ + 0.03); pane(-0.04, WIN.x1 - 0.05, WIN.y0 + 0.05, TRANSOM, FZ - 0.03);
+  pane(WIN.x0 + 0.05, 0.04, WIN.y0 + 0.05, TRANSOM, FZ + 0.03); pane(WIN.x0 + 0.1, 0.07, WIN.y0 + 0.05, TRANSOM, FZ - 0.03);
   pane(0, WIN.x1, TRANSOM, WIN.y1, FZ);
   const ag = new THREE.Mesh(new THREE.PlaneGeometry(-WIN.x0 - 0.12, WIN.y1 - TRANSOM - 0.12), glassMat); ag.position.set(0, -(WIN.y1 - TRANSOM - 0.08)/2, 0); ag.renderOrder = 2; AWN.add(ag);
 }
@@ -1290,7 +1290,7 @@ function renderKeys(){
 }
 
 /* ---------- 聲音：全部 Web Audio 即時合成。
-   窗外（隔著玻璃，一扇推開一點）：遠處車流的底、每台經過的車和機車（依位置分左右、靠近時變大、音高隨都卜勒滑落）、
+   窗外（推拉窗開了一半）：遠處車流的底、每台經過的車和機車（依位置分左右、靠近時變大、音高隨都卜勒滑落）、
    白天幾聲白頭翁、行人號誌的嗶嗶聲、晚上蟋蟀；下雨時雨聲、鐵皮雨遮上的滴答、偶爾的雷；傍晚垃圾車放〈給愛麗絲〉 ---------- */
 let audio = null;
 function resumeAudio(){ if (audio && audio.ac.state !== 'running') audio.ac.resume().catch(() => {}); }
@@ -1332,7 +1332,7 @@ function startAudio(){
     else master.connect(ac.destination);
     const tick0 = ac.createBufferSource(); tick0.buffer = ac.createBuffer(1, 1, SR); tick0.connect(ac.destination); tick0.start(0);
     // 窗：高頻被削掉一些（有一扇推開了一點，所以不是全悶）
-    const glass = F('lowpass', 4200, 0.5), outG = G(1); chain(outG, glass, master);
+    const glass = F('lowpass', 9500, 0.5), outG = G(1.25);   // 窗開著：街聲幾乎不被玻璃削掉 chain(outG, glass, master);
     const outPan = P(); outPan.connect(outG);
     // 遠處車流的底
     const bedG = G(0); chain(loop(brown, 0.4), F('lowpass', phone ? 380 : 220), bedG, outG);
@@ -2015,7 +2015,7 @@ function frame(now){
   look.yaw += (look.yawT - look.yaw)*lk; look.pitch += (look.pitchT - look.pitch)*lk;
   const lean = ss(-look.pitch, 0.12, 0.7);
   const br = Math.sin(t*Math.PI*2/5);
-  camera.position.set(EYE.x - Math.sin(look.yaw)*0.25*lean, EYE.y + 0.25*lean + br*0.004, EYE.z - 1.3*lean);
+  camera.position.set(EYE.x - Math.sin(look.yaw)*0.25*lean, EYE.y + 0.25*lean + br*0.004, EYE.z - 0.55*lean);
   camera.rotation.set(look.pitch + br*0.002, look.yaw, 0);
   camera.updateMatrixWorld();
 
