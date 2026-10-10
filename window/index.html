@@ -1525,7 +1525,7 @@ function updateTraffic(t, dt){
   // 垃圾車：每天傍晚 19:20 左右從右邊慢慢開過來，在窗前停一下讓大家倒垃圾
   const day = Math.floor(st.hour / 24), hh = st.hour % 24;
   if (hh > 19.2 && hh < 19.6 && truckPlan.day !== day && !TRUCK.active){
-    truckPlan.day = day; const lane = LANES[2];
+    truckPlan.day = day; const lane = LANES.find(l => l.dir < 0 && l.kind === 'car');
     TRUCK.s = -SPAN; TRUCK.v = 2.3; TRUCK.vmax = 2.3; TRUCK.lane = lane; TRUCK.active = true; TRUCK.g.visible = true; TRUCK.g.rotation.y = Math.PI; TRUCK.stopS = -1; TRUCK.stopUntil = 0;
     lane.list.push(TRUCK);
   }
