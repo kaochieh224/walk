@@ -297,7 +297,7 @@ const rotor = new THREE.Group();
   const knob = lathe([[0.0,0.0],[0.03,0.0],[0.028,-0.018],[0.015,-0.028],[0.0,-0.03]], smooth, 16); knob.position.y = -0.155; rotor.add(knob);
   const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.008, 6), seamM); screw.position.set(0.1, -0.148, 0.03); rotor.add(screw);   // 偏心的小螺絲，看得出在轉
   // 扇葉：根部窄、往外慢慢變寬，末端是圓頭；長約 1.05 m（直徑約 2.4 m），有一點傾角和往下的弧度
-  const L0 = 0.17, L1 = 1.22, W0 = 0.1, W1 = 0.19;
+  const L0 = 0.08, L1 = 1.0, W0 = 0.1, W1 = 0.17;   // 根部從殼裡面開始，整支吊扇比上一版小（直徑約 2 m）
   const s = new THREE.Shape();
   s.moveTo(L0, -W0/2);
   s.bezierCurveTo(L0 + 0.15, -W0/2 - 0.01, L1 - 0.4, -W1/2, L1 - W1*0.45, -W1/2);
@@ -309,13 +309,12 @@ const rotor = new THREE.Group();
   bladeG.rotateX(Math.PI/2);
   { const p = bladeG.attributes.position; for (let i = 0; i < p.count; i++){ const x = p.getX(i); p.setY(i, p.getY(i) - Math.pow(Math.max(0, x - L0), 2)*0.035); } bladeG.computeVertexNormals(); }   // 往外微微下垂
   const bladeM = new THREE.MeshLambertMaterial({ color: 0xd8d8d6, emissive: 0x262626, side: THREE.DoubleSide });   // 扇葉只投影不接收陰影，底面才不會被自己的陰影蓋黑
-  // 扇葉與殼之間的連接片：同色、薄而寬，從殼下緣伸出托住扇葉
-  const mountG = new THREE.BoxGeometry(0.2, 0.016, 0.075); mountG.translate(0.2, -0.04, 0);
+  // 殼的腰間一圈外翻的圓環面：上下兩片殼在這裡夾住扇葉，把扇葉根部整個包起來
+  const flange = lathe([[0.2, 0.02],[0.245, 0.016],[0.258, 0.0],[0.245, -0.016],[0.2, -0.02]], smooth, 40); rotor.add(flange);
   for (let k = 0; k < 3; k++){
     const arm = new THREE.Group(); arm.rotation.y = k*Math.PI*2/3; rotor.add(arm);
-    const blade = cast(new THREE.Mesh(bladeG, bladeM)); blade.rotation.x = 0.13; blade.position.y = -0.048; arm.add(blade);
-    const mount = cast(new THREE.Mesh(mountG, smooth)); arm.add(mount);
-    for (const [x, z] of [[0.24, -0.025], [0.24, 0.025], [0.29, 0]]){ const r = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.006, 6), seamM); r.position.set(x, -0.065, z); arm.add(r); }
+    const blade = cast(new THREE.Mesh(bladeG, bladeM)); blade.rotation.x = 0.1; blade.position.y = 0.006; arm.add(blade);   // 插在殼的接縫裡
+    for (const z of [-0.028, 0.028]){ const r = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.03, 6), seamM); r.position.set(0.3, 0.0, z); arm.add(r); }   // 出殼處兩顆鉚釘
   }
 }
 
