@@ -1345,7 +1345,17 @@ function startAudio(){
     // 雷
     const thunderBus = G(1); chain(thunderBus, F('lowpass', 260), outG);
     // 鳥：白頭翁短短的幾個音
-    const birdBus = G(phone ? 0.05 : 0.035); birdBus.connect(outG);
+    // 鳥：先過一道低通（隔著街、隔著樹），再加一點短殘響，讓叫聲像從遠處的樹上傳來，不會貼在耳邊
+    const birdBus = G(phone ? 0.032 : 0.022), birdLP = F('lowpass', 3600, 0.4), birdVerb = ac.createConvolver(), birdWet = G(0.55);
+    { const n = Math.floor(ac.sampleRate*1.8), ir = ac.createBuffer(2, n, ac.sampleRate);
+      for (let c = 0; c < 2; c++){ const d = ir.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random()*2 - 1) * Math.pow(1 - i/n, 3.2); }
+      birdVerb.buffer = ir; }
+    chain(birdBus, birdLP, outG); chain(birdLP, birdVerb, birdWet, outG);
+    // 錄音版的鳥叫：頁面旁邊若有 birds.ogg／birds.mp3（開放授權的田野錄音），就用它循環當背景，取代合成的鳥叫
+    const recG = G(0); recG.connect(outG);
+    const recBirds = { ok: false };
+    (async () => { for (const f of ['birds.ogg', 'birds.mp3']){ try { const r = await fetch(f); if (!r.ok) continue; const buf = await ac.decodeAudioData(await r.arrayBuffer());
+      const src = ac.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(recG); src.start(); recBirds.ok = true; return; } catch (e) {} } })();
     // 晚上的蟋蟀
     const crk = ac.createOscillator(); crk.frequency.value = 4400; const crkAM = G(0), crkG = G(0);
     const lfo = ac.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 28; const lfoG = G(0.5); chain(lfo, lfoG, crkAM.gain); lfo.start();
@@ -1356,7 +1366,7 @@ function startAudio(){
     const truckBus = G(0), truckPan = P(), truckF = F('lowpass', 2600); chain(truckBus, truckF, truckPan, outG);
     // 室內極淡的房間底噪
     chain(loop(brown, 2.7), F('lowpass', 200), G(phone ? 0.008 : 0.005), master);
-    audio = { ac, master, phone, outPan, outG, bedG, bed2G, voices, rainG, rainLowG, tink, tinkBus, thunderBus, birdBus, crkG, crk, lfo, beepBus, beepPan, truckBus, truckPan, nextBird: 4, nextBeep: 0, noteAt: 0, noteI: 0, horn: 40 + Math.random()*60, white, brown };
+    audio = { ac, master, phone, outPan, outG, bedG, bed2G, voices, rainG, rainLowG, tink, tinkBus, thunderBus, birdBus, recG, recBirds, crkG, crk, lfo, beepBus, beepPan, truckBus, truckPan, nextBird: 4, nextBeep: 0, noteAt: 0, noteI: 0, horn: 40 + Math.random()*60, white, brown };
     resumeAudio();
   } catch (err) { audio = null; }
 }
@@ -1364,16 +1374,18 @@ function chirp(A, at, pan){
   const ac = A.ac, o = ac.createOscillator(), g = ac.createGain(), p = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
   if (p.pan) p.pan.value = pan;
   o.type = 'sine'; o.connect(g); g.connect(p); p.connect(A.birdBus);
-  const base = 2000 + Math.random()*700; let t = at;
+  // 柔一點：每個音緩起緩收、帶一點顫音，整串的遠近（音量）隨機，音與音之間留空
+  const base = 1900 + Math.random()*600, far = 0.35 + Math.random()*0.65; let t = at;
+  const vib = ac.createOscillator(), vg = ac.createGain(); vib.frequency.value = 28 + Math.random()*14; vg.gain.value = base*0.025; vib.connect(vg); vg.connect(o.frequency);
   g.gain.setValueAtTime(0, at);
-  const notes = 3 + Math.floor(Math.random()*3);
+  const notes = 2 + Math.floor(Math.random()*3);
   for (let i = 0; i < notes; i++){
-    const f0 = base * (0.85 + Math.random()*0.5), f1 = f0 * (Math.random() < 0.5 ? 1.35 : 0.75), d = 0.07 + Math.random()*0.09;
+    const f0 = base * (0.9 + Math.random()*0.35), f1 = f0 * (Math.random() < 0.5 ? 1.2 : 0.82), d = 0.1 + Math.random()*0.12;
     o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + d);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + 0.01); g.gain.setValueAtTime(1, t + d - 0.02); g.gain.linearRampToValueAtTime(0, t + d);
-    t += d + 0.03 + Math.random()*0.06;
+    g.gain.setTargetAtTime(far, t, 0.02); g.gain.setTargetAtTime(0, t + d*0.6, 0.035);
+    t += d + 0.08 + Math.random()*0.12;
   }
-  o.start(at); o.stop(t + 0.05);
+  o.start(at); vib.start(at); o.stop(t + 0.3); vib.stop(t + 0.3);
 }
 function oneShot(A, buf, rate, gain, dest, at, pan = 0){
   const ac = A.ac, n = ac.createBufferSource(); n.buffer = buf; n.playbackRate.value = rate;
@@ -1424,7 +1436,8 @@ function audioFrame(t, dt, act){
   const nT = rain * dt * 30;
   for (let k = 0; k < 4; k++) if (Math.random() < nT/4) oneShot(A, A.tink, 0.6 + Math.random()*0.9, 0.3 + Math.random()*0.7, A.tinkBus, at + Math.random()*0.05, (Math.random() - 0.5)*1.2);
   // 鳥：白天、沒下雨
-  if (t > A.nextBird){ A.nextBird = t + 5 + Math.random()*16; if (night < 0.3 && rain < 0.3) chirp(A, at + 0.05, (Math.random() - 0.5)*1.4); }
+  A.recG.gain.setTargetAtTime(A.recBirds.ok ? (A.phone ? 0.5 : 0.35) * (1 - night) * (1 - 0.8*rain) : 0, at, 2);
+  if (t > A.nextBird){ A.nextBird = t + 9 + Math.random()*26; if (!A.recBirds.ok && night < 0.3 && rain < 0.3) chirp(A, at + 0.05, (Math.random() - 0.5)*1.2); }
   // 蟋蟀：晚上、沒下雨
   A.crkG.gain.setTargetAtTime(night * (1 - rain) * (ph ? 0.006 : 0.003) * (0.6 + 0.4*Math.sin(t*0.4)), at, 1);
   // 行人號誌：行人綠燈時一下一下地響
