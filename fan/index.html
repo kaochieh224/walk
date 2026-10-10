@@ -84,7 +84,7 @@ const FAN = new THREE.Vector3(0, 0, (RZ0 + RZ1)/2);  // 吊扇在天花板正中
 // 預設正對吊扇的扇葉中心
 const HOME = (() => { const d = new THREE.Vector3(FAN.x - EYE.x, RH - 0.55 - EYE.y, FAN.z - EYE.z).normalize(); return { yaw: Math.atan2(-d.x, d.y), pitch: Math.asin(d.z) }; })();
 // 視角限制：只看得到天花板和牆的上半段。往腳或往頭那頭，畫面邊緣最低只到仰角 LOOK_FLOOR；左右只能從吊扇偏開 YAW_SPAN
-const LOOK_FLOOR = THREE.MathUtils.degToRad(18), YAW_SPAN = 0.55;
+const LOOK_FLOOR = THREE.MathUtils.degToRad(18), YAW_SPAN = 0.9;
 let PITCH_MIN = -0.8, PITCH_MAX = 0.5;
 
 /* ---------- 共用噪聲 ---------- */
@@ -614,14 +614,22 @@ const DAY_LEN = 720;   // 中午到下午 5 點走一圈的秒數
 const FAN_RPS = 0.12;   // 固定一種速度，非常緩慢：約 8 秒轉一圈
 const WIND = 0.35;      // 慢速吊扇的風：拿來帶動窗簾、灰塵和風聲
 const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
-// 依實際畫面四個角算限制：任何一角的仰角低於 CORNER_FLOOR 就往預設角度收回，桌機寬螢幕轉到底也看不到地板（2026-10-10）
-const CORNER_FLOOR = THREE.MathUtils.degToRad(12), _lq = new THREE.Quaternion(), _le = new THREE.Euler(0, 0, 0, 'ZXY'), _lv = new THREE.Vector3();
+// 依實際畫面的邊緣算限制：沿畫面外框取 16 個方向，從眼睛射到房間的牆／地板，只要有一條打到地板或牆的 0.95 m 以下，
+// 就往預設角度收回。比起只看仰角寬鬆得多，手機也能明顯左右轉頭，但寬螢幕轉到底仍然看不到地板（2026-10-10）
+const SEE_FLOOR_Y = 0.95, _lq = new THREE.Quaternion(), _le = new THREE.Euler(0, 0, 0, 'ZXY'), _lv = new THREE.Vector3();
 function lookOK(yaw, pitch){
   _lq.setFromEuler(_le.set(Math.PI/2 + pitch, 0, yaw, 'ZXY'));
   const tv = Math.tan(THREE.MathUtils.degToRad(camera.fov/2)), th = tv * camera.aspect;
-  for (const [x, y] of [[-th, -tv], [th, -tv], [-th, tv], [th, tv], [0, -tv], [0, tv]]){
+  for (let i = 0; i < 16; i++){
+    const u = i/16*4, e = u % 1, sd = Math.floor(u);
+    const x = sd === 0 ? -th + 2*th*e : sd === 1 ? th : sd === 2 ? th - 2*th*e : -th;
+    const y = sd === 0 ? -tv : sd === 1 ? -tv + 2*tv*e : sd === 2 ? tv : tv - 2*tv*e;
     _lv.set(x, y, -1).normalize().applyQuaternion(_lq);
-    if (_lv.y < Math.sin(CORNER_FLOOR)) return false;
+    if (_lv.y >= 0) continue;   // 往上看的方向一定打到天花板或牆的上半
+    let t = (0 - EYE.y) / _lv.y;
+    if (_lv.x) t = Math.min(t, ((_lv.x > 0 ? RX : -RX) - EYE.x) / _lv.x);
+    if (_lv.z) t = Math.min(t, ((_lv.z > 0 ? RZ1 : RZ0) - EYE.z) / _lv.z);
+    if (EYE.y + _lv.y * t < SEE_FLOOR_Y) return false;
   }
   return true;
 }
@@ -919,5 +927,5 @@ document.getElementById('start').addEventListener('click', () => {
   unlockMedia(); startAudio();
   setUI(true); uiBtn.hidden = false;
 });
-window.__fan = { st, look, ACT, scene, post, dustMat, sun, bounce };
+window.__fan = { lookOK, st, look, ACT, scene, post, dustMat, sun, bounce };
 </script>
