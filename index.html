@@ -73,6 +73,7 @@ const PALS = [
   { name:'黃昏', en:'DUSK', pal:['#19150c','#3c3e2d','#57473f','#63648c','#7c99e4'], accent:'#6f6d45', glow:'#4fc4bb', sun:1.0, glow:0.12, rain:0 },   // 原分析影片
   { name:'雨夜', en:'RAIN', pal:['#0e181e','#1b2b34','#2e434d','#52656c','#8aa2aa'], accent:'#7a6238', glow:'#6fd8b0', sun:0.8, glow:0.35, rain:1 },   // 參考影片一：雨中林地
   { name:'藍夜', en:'NIGHT', pal:['#14141f','#2a2d44','#3b3d70','#5557b8','#8285f0'], accent:'#66664a', glow:'#9f8cff', sun:0.75, glow:0.6, rain:0 },   // 參考影片二：藍紫夜景、腳下光暈
+  { name:'潛行者', en:'STALKER', pal:['#161a15','#363d33','#5f6a5c','#97a28f','#cfd6c4'], accent:'#6e6844', glow:'#a7b8a0', sun:0.85, glow:0.25, rain:0 },   // 塔可夫斯基《潛行者》：褪色的灰綠、霧白高光
 ];
 const toVec = h => { const c = new THREE.Color(); c.setStyle(h, THREE.LinearSRGBColorSpace); return new THREE.Vector3(c.r, c.g, c.b); };
 const PAL = PALS[0].pal;
@@ -211,14 +212,14 @@ function patch(mat, wet, struct, ruin){
   mat.customProgramCacheKey = () => 'beach' + (wet ? 'W' : '') + (struct ? 'S' : '') + (ruin ? 'R' : '');   // 不同變體不能共用同一個編譯結果
   mat.onBeforeCompile = s => {
     s.uniforms.uTime = U.uTime; s.uniforms.uSP = U.uSP; s.uniforms.uSQ = U.uSQ;
-    s.vertexShader = 'varying vec3 vWPos;\nvarying vec3 vLPos;\n' + s.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
-      vLPos = transformed;
+    s.vertexShader = 'varying vec3 vWPos;\nvarying vec3 vLPos;\n' + (ruin ? 'attribute float aWall;\nvarying float vWall;\nvarying vec3 vLN;\n' : '') + s.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      vLPos = transformed;${ruin ? ' vWall = aWall; vLN = normal;' : ''}
       vec4 wp_ = vec4(transformed, 1.0);
       #ifdef USE_INSTANCING
         wp_ = instanceMatrix * wp_;
       #endif
       vWPos = (modelMatrix * wp_).xyz;`);
-    s.fragmentShader = GLSL + 'varying vec3 vLPos;\n' + s.fragmentShader.replace('#include <opaque_fragment>', `
+    s.fragmentShader = GLSL + 'varying vec3 vLPos;\n' + (ruin ? 'varying float vWall;\nvarying vec3 vLN;\n' : '') + s.fragmentShader.replace('#include <opaque_fragment>', `
       outgoingLight *= cloudShade(vWPos);
       ${ruin ? `
       // 廢墟質感：用大樓自己的座標畫髒污、雨水垂流、樓板下的煙燻、剝落斑塊，倒塌時貼圖跟著走
@@ -229,7 +230,18 @@ function patch(mat, wet, struct, ruin){
       float spall = smoothstep(0.7, 0.78, vnoise(fp*0.45 + 11.0));
       float grit = hash12(floor(fp*2.0));
       float gr = mix(0.38, 1.3, blot) * (1.0 - 0.6*streak) * mix(0.65, 1.0, soot) * (1.0 - 0.4*spall) * (0.85 + 0.3*grit);
-      gr *= mix(0.6, 1.0, smoothstep(1.0, 14.0, vLPos.y));   // 底部泡水、長青苔變暗
+      gr *= mix(0.6, 1.0, smoothstep(1.0, 14.0, vLPos.y));   // 底部泡水變暗
+      // 實牆上的窗洞：每 3 公尺一扇、每層一排；有的窗被炸大、有的整扇不見，窗內是暗的
+      if (vWall > 1.5) gr = 0.2 + 0.12*grit;   // 鋼骨、鋼筋：深色鏽鐵
+      else if (vWall > 0.5 && abs(vLN.y) < 0.5){
+        float wu = abs(vLN.x) > abs(vLN.z) ? vLPos.z : vLPos.x;
+        vec2 cell = vec2(floor(wu/3.0), floor(vLPos.y/3.4));
+        float hc = hash12(cell + 3.7), fu = fract(wu/3.0), fv = fract(vLPos.y/3.4);
+        float gw = hc > 0.85 ? 0.42 : 0.28, gt = hc > 0.85 ? 0.15 : 0.3;   // 15% 的窗破成大洞
+        float win = step(0.5 - gw, fu) * step(fu, 0.5 + gw) * step(gt, fv) * step(fv, 0.84);
+        win *= step(0.06, hash12(cell + 9.1));
+        gr *= mix(1.0, 0.13 + 0.1*hash12(cell), win);
+      }
       outgoingLight *= gr;` : ''}
       ${wet ? `
       float zf = vWPos.z - (shoreZ(vWPos.x) - 9.5);
@@ -271,9 +283,18 @@ function rockGeo(rng, a, b, c){
   return new ConvexGeometry(pts);
 }
 // 廢墟大樓（參考《全面啟動》Limbo 的海岸）：只剩樓板與外圍柱的現代主義骨架，頂部斷裂
+// 鋼骨／鋼筋：任意兩點之間的細長方桿，aWall=2 讓貼圖把它畫成深色鋼材
+const _steelM = new THREE.Matrix4(), _sA = new THREE.Vector3(), _sB = new THREE.Vector3(), _upY = new THREE.Vector3(0,1,0), _upX = new THREE.Vector3(1,0,0);
+function steelBar(parts, x0, y0, z0, x1, y1, z1, t){
+  _sA.set(x0, y0, z0); _sB.set(x1, y1, z1); const L = _sA.distanceTo(_sB); if (L < 0.1) return;
+  const g = new THREE.BoxGeometry(t, t, L);
+  _steelM.lookAt(_sB, _sA, Math.abs(y1 - y0)/L > 0.95 ? _upX : _upY); _steelM.setPosition((x0+x1)/2, (y0+y1)/2, (z0+z1)/2); g.applyMatrix4(_steelM);
+  g.setAttribute('aWall', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(2), 1)); parts.push(g);
+}
 function slabGeo(rng, w, d, floors, intact=false){   // intact：下層段落，頂部不殘缺，上一段才接得上
   const FH = 3.4, H = floors*FH, parts = [];
-  const bx = (sx, sy, sz, x, y, z, rx=0, ry=0, rz=0) => { const g = new THREE.BoxGeometry(sx, sy, sz); if (rx || ry || rz){ g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); } g.translate(x, y, z); parts.push(g); };
+  const bx = (sx, sy, sz, x, y, z, rx=0, ry=0, rz=0, wall=0) => { const g = new THREE.BoxGeometry(sx, sy, sz); if (rx || ry || rz){ g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); } g.translate(x, y, z);
+    g.setAttribute('aWall', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(wall), 1)); parts.push(g); };
   const topCut = () => intact ? H : H - rng()*FH*4;
   // 崩塌角：從某一層以上，一個角整塊塌掉，越往上缺得越多
   const cs = rng() < 0.5 ? -1 : 1, czs = rng() < 0.5 ? -1 : 1;
@@ -281,8 +302,11 @@ function slabGeo(rng, w, d, floors, intact=false){   // intact：下層段落，
   const cw0 = w*(0.22 + rng()*0.25), cd = d*(0.4 + rng()*0.4);
   const cwAt = f => Math.min(w*0.62, cw0*(1 + (f - cf)*0.06) + rng()*w*0.08);
   // 斷口露出的鋼筋：細桿往外伸、微微下垂
-  const rebar = (x, y, z, dir) => { const n = 2 + Math.floor(rng()*4);
-    for (let i=0;i<n;i++){ const L = 0.8 + rng()*2.2; bx(L, 0.08, 0.08, x + dir*L/2, y + (rng()-0.5)*0.2, z + (rng()-0.5)*2.5, 0, (rng()-0.5)*0.5, -dir*(0.1 + rng()*0.5)); } };
+  const steel = (x0, y0, z0, x1, y1, z1, t=0.32) => steelBar(parts, x0, y0, z0, x1, y1, z1, t);
+  const rebar = (x, y, z, dir, alongZ=false) => { const n = 3 + Math.floor(rng()*5);   // 一束粗鋼筋往外伸、彎垂
+    for (let i=0;i<n;i++){ const L = 1.2 + rng()*3.5, dz = (rng()-0.5)*3, dy = (rng()-0.5)*0.3, droop = L*(0.1 + rng()*0.6), side = (rng()-0.5)*L*0.5;
+      if (alongZ) steel(x + dz, y + dy, z, x + dz + side, y + dy - droop, z + dir*L, 0.16);
+      else steel(x, y + dy, z + dz, x + dir*L, y + dy - droop, z + dz + side, 0.16); } };
   for (let f=0; f<=floors; f++){
     const y = f*FH;
     if (!intact && f > floors - 4 && rng() < 0.45) {        // 頂部幾層殘缺，但殘塊一定搭在核心筒上，不會懸空
@@ -321,8 +345,61 @@ function slabGeo(rng, w, d, floors, intact=false){   // intact：下層段落，
   for (let i=0;i<=nx;i++) for (const sz of [-1,1]) if (i === 0 || i === nx || intact || rng() > 0.18) col(-w/2 + i*w/nx + (rng()-0.5)*0.8, sz*d/2);   // 角柱一定在，其他柱子偶爾整根不見
   for (let j=1;j<nz;j++) for (const sx of [-1,1]) if (intact || rng() > 0.18) col(sx*w/2, -d/2 + j*d/nz + (rng()-0.5)*0.8);
   bx(w*0.3, H, d*0.3, 0, H/2, 0);          // 核心筒：一路通到頂，所有樓板都有支撐
+  // 實牆（參考 NieR 的城市廢墟）：每層四面都有混凝土外牆，窗洞由貼圖畫出；牆上有大破洞露出裡面的樓板
+  const sides = [ { ax:'x', s:-1, L:w }, { ax:'x', s:1, L:w }, { ax:'z', s:-1, L:d }, { ax:'z', s:1, L:d } ];
+  for (const sd of sides){
+    sd.holes = [];
+    const nh = intact ? (rng() < 0.4 ? 1 : 0) : 1 + Math.floor(rng()*3);
+    for (let h=0;h<nh;h++){ const hw = sd.L*(0.18 + rng()*0.4), hc = (rng()-0.5)*(sd.L - hw), f0 = Math.floor(rng()*floors), f1 = f0 + 1 + Math.floor(rng()*Math.max(2, floors*0.4));
+      sd.holes.push({ a0: hc - hw/2, a1: hc + hw/2, f0, f1 }); }
+    sd.open0 = rng() < 0.5;   // 一樓挑空
+  }
+  const wallTop = intact ? floors : floors - 1;
+  for (let f=0; f<wallTop; f++){
+    for (const sd of sides){
+      if (f === 0 && sd.open0) continue;
+      let segs = [[-sd.L/2, sd.L/2]];
+      const cut = (a0, a1) => { const out = []; for (const [b0, b1] of segs){ if (a1 <= b0 || a0 >= b1){ out.push([b0, b1]); continue; } if (a0 > b0) out.push([b0, a0]); if (a1 < b1) out.push([a1, b1]); } segs = out; };
+      for (const hl of sd.holes) if (f >= hl.f0 && f <= hl.f1){ const j = () => (rng()-0.5)*2.4; cut(hl.a0 + j(), hl.a1 + j()); }   // 破洞邊緣每層參差
+      if (f >= cf){   // 塌角那邊的牆也跟著沒了
+        if (sd.ax === 'z' && sd.s === czs) cs > 0 ? cut(w/2 - cwAt(f), w/2 + 1) : cut(-w/2 - 1, -w/2 + cwAt(f));
+        if (sd.ax === 'x' && sd.s === cs) czs > 0 ? cut(d/2 - cd, d/2 + 1) : cut(-d/2 - 1, -d/2 + cd);
+      }
+      if (!intact && f >= floors - 4) segs = segs.map(([a0, a1]) => [a0 + rng()*(a1 - a0)*0.4, a1 - rng()*(a1 - a0)*0.4]);   // 頂部幾層的牆殘缺得更厲害
+      const y = f*FH + FH/2, hh = FH - 0.4;
+      for (const [a0, a1] of segs){ const len = a1 - a0; if (len < 0.9) continue;
+        const ragged = !intact && rng() < 0.15 ? FH*(0.3 + rng()*0.5) : hh;   // 有些牆只剩下半截
+        if (sd.ax === 'z') bx(len, ragged, 0.35, (a0 + a1)/2, y - (hh - ragged)/2, sd.s*d/2, 0, 0, 0, 1);
+        else bx(0.35, ragged, len, sd.s*w/2, y - (hh - ragged)/2, (a0 + a1)/2, 0, 0, 0, 1); }
+    }
+  }
+  // 牆面破洞裡露出的鋼骨：樓板邊梁橫跨破洞，有的被壓彎下垂、有的斷成半截垂掛；破洞兩側伸出鋼筋
+  const P3s = (sd, a, y) => sd.ax === 'z' ? [a, y, sd.s*d/2] : [sd.s*w/2, y, a];
+  for (const sd of sides) for (const hl of sd.holes) for (let f = Math.max(1, hl.f0); f <= Math.min(hl.f1, wallTop); f++){
+    const y = f*FH, u = rng();
+    if (u < 0.35){ const m = (hl.a0 + hl.a1)/2 + (rng()-0.5)*2, sag = 0.3 + rng()*2.2;   // 整根壓彎
+      steel(...P3s(sd, hl.a0, y), ...P3s(sd, m, y - sag)); steel(...P3s(sd, m, y - sag), ...P3s(sd, hl.a1, y)); }
+    else if (u < 0.65){ const fromA = rng() < 0.5, a = fromA ? hl.a0 : hl.a1, L = (hl.a1 - hl.a0)*(0.3 + rng()*0.5), drop = 1 + rng()*FH*1.2;   // 斷成半截往下掛
+      steel(...P3s(sd, a, y), ...P3s(sd, a + (fromA ? L : -L), y - drop)); }
+    if (rng() < 0.7){ const dir = rng() < 0.5 ? 1 : -1, a = dir > 0 ? hl.a0 : hl.a1, [px, py, pz] = P3s(sd, a, y + FH*0.5);
+      rebar(px, py, pz, dir, sd.ax === 'x'); }
+  }
+  // 樓頂外露的鋼骨冠：柱子繼續往上伸、梁一段一段斷掉，有的歪倒或垂下來
+  if (!intact){
+    const nc = 1 + Math.floor(rng()*3), pts = [];
+    for (let i=0;i<=nx;i++) for (const sz of [-1,1]) pts.push([-w/2 + i*w/nx, sz*d/2]);
+    for (let j=1;j<nz;j++) for (const sx of [-1,1]) pts.push([sx*w/2, -d/2 + j*d/nz]);
+    const tops = pts.map(([x, z]) => { if (inCorner(x, z) && cf <= floors || rng() < 0.35) return null;
+      const h = FH*(0.5 + rng()*nc), lx = (rng()-0.5)*h*0.25, lz = (rng()-0.5)*h*0.25;
+      steel(x, H - 0.2, z, x + lx, H + h, z + lz, 0.42); return [x + lx*0.6, H + h*0.6, z + lz*0.6]; });
+    for (let i=0;i<tops.length;i++){ const A = tops[i], B = tops[(i + 1) % tops.length]; if (!A || !B || rng() < 0.4) continue;
+      if (Math.hypot(A[0] - B[0], A[2] - B[2]) > Math.max(w, d)*0.6) continue;
+      if (rng() < 0.7) steel(...A, ...B, 0.34);
+      else steel(...A, A[0] + (B[0] - A[0])*0.5, A[1] - 1.5 - rng()*3, A[2] + (B[2] - A[2])*0.5, 0.34); }
+    for (let i=0;i<3;i++) if (rng() < 0.5){ const x = (rng()-0.5)*w, z = (rng()-0.5)*d; steel(x, H, z, x + (rng()-0.5)*6, H + 2 + rng()*6, z + (rng()-0.5)*6, 0.3); }   // 斜插的鋼梁
+  }
   // 外牆殘片：一片片帷幕板還掛著，有的翹起剝落
-  const np = Math.floor(floors*(0.3 + rng()*0.5));
+  const np = Math.floor(floors*(0.1 + rng()*0.2));
   for (let i=0;i<np;i++){ const f = Math.floor(rng()*floors), pw = 2 + rng()*6, side = rng()<0.5 ? -1 : 1, peel = rng() < 0.3 ? (rng()-0.5)*0.5 : 0;
     const px = (rng()-0.5)*(w - pw);
     if (f >= cf && cs*px > w/2 - cw0 - pw) continue;
@@ -340,7 +417,15 @@ function slabGeo(rng, w, d, floors, intact=false){   // intact：下層段落，
 // 建築造型隨機：板樓、退縮、雙塔、圓塔（螺旋扭轉樓已取消）
 function towerGeo(rng, w, d, floors){
   const u = rng(), FH = 3.4;
-  if (u < 0.38) return slabGeo(rng, w, d, floors);
+  if (u < 0.38){
+    if (floors > 16 && rng() < 0.4){   // 攔腰折斷：上半截以一側為支點歪倒，靠在下半截的斷口上
+      const fs = Math.floor(floors*(0.45 + rng()*0.25)), lean = (rng() < 0.5 ? -1 : 1), a = 0.12 + rng()*0.3;
+      const lo = slabGeo(rng, w, d, fs), hi = slabGeo(rng, w, d, floors - fs);
+      hi.translate(-lean*w/2, 0, 0); hi.rotateZ(-lean*a); hi.translate(lean*w/2, fs*FH - FH*1.2, 0);
+      return mergeAll([lo, hi]);
+    }
+    return slabGeo(rng, w, d, floors);
+  }
   if (u < 0.6){   // 退縮：2～3 段越往上越窄
     const n = 2 + Math.floor(rng()*2), list = []; let y = 0;
     for (let i=0;i<n;i++){ const f = Math.max(3, Math.round(floors/n*(1 - i*0.1))), k = 1 - i*(0.18 + rng()*0.1);
@@ -368,6 +453,7 @@ const P3 = (x,y,z) => new THREE.Vector3(x,y,z);
 // 合併任何幾何（盒子、圓柱、凸包）：統一轉成非索引、去掉 uv
 function mergeAll(list){
   const out = list.map(g => { const n = g.index ? g.toNonIndexed() : g; if (n.attributes.uv) n.deleteAttribute('uv'); if (!n.attributes.normal) n.computeVertexNormals(); return n; });
+  if (out.some(g => g.attributes.aWall)) out.forEach(g => { if (!g.attributes.aWall) g.setAttribute('aWall', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count), 1)); });
   const m = mergeGeometries(out); list.forEach(g => g.dispose()); return m;
 }
 const darkMat = patch(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.06,0.06,0.06), flatShading:true }));
@@ -655,6 +741,20 @@ function farH(x, z){
   if (k > 0) y += 2.5*vn(x*0.02, z*0.02)*Math.min(k/20, 1) + Math.max(0, k - 220)*0.18*(0.5 + vn(x*0.008 + 40, z*0.008));
   return y - (z > -110 ? 0.45 : 0);   // 和細節地形重疊處稍微壓低，避免交錯閃爍
 }
+// 背景用的廢墟量體：幾段高低不一的實牆量體（有窗洞貼圖）、斷面上伸出的鋼骨，比前景大樓省很多面
+function ruinBlockGeo(rng, w, d, h){
+  const parts = [], k = 2 + Math.floor(rng()*3);
+  const box = (sx, sy, sz, x, y, z, v) => { const g = new THREE.BoxGeometry(sx, sy, sz); g.translate(x, y, z);
+    g.setAttribute('aWall', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1)); parts.push(g); };
+  let top = 0;
+  for (let i=0;i<k;i++){ const sw = w/k, sh = h*(i === 0 || rng() < 0.4 ? 0.85 + rng()*0.15 : 0.45 + rng()*0.4), x = -w/2 + sw*(i + 0.5);
+    box(sw*1.02, sh, d*(0.85 + rng()*0.15), x, sh/2, 0, 1);
+    if (rng() < 0.5){ const gh = sh*(0.15 + rng()*0.2), gy = sh*(0.3 + rng()*0.5); box(sw*0.6, gh, d*1.04, x + (rng()-0.5)*sw*0.3, gy, 0, 2); }   // 牆上炸開的大洞：裡面是暗的
+    for (let j=0;j<3 + Math.floor(rng()*4);j++){ const bx0 = x + (rng()-0.5)*sw*0.9, bz0 = (rng()-0.5)*d*0.9, L = 3 + rng()*12;   // 斷面上的鋼骨
+      steelBar(parts, bx0, sh - 0.5, bz0, bx0 + (rng()-0.5)*L*0.5, sh + L, bz0 + (rng()-0.5)*L*0.4, 0.5 + rng()*0.4); }
+    top = Math.max(top, sh); }
+  const g = mergeGeometries(parts); parts.forEach(p => p.dispose()); return g;
+}
 const farChunks = new Map();
 function buildFar(ci){
   const g = new THREE.Group(), x0 = ci*CH, NX = CH/FAR_STEP, NZ = Math.round((170 - FAR_Z0)/FAR_STEP);
@@ -667,10 +767,13 @@ function buildFar(ci){
   for (const [arr, mat] of [[back, cliffMat], [front, sandMat]]){
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; g.add(m); }
-  // 遠方山脊上零星的巨樓剪影
+  // 海岸後方一層層的廢墟城市：近層（崖後高地）、中層、遠層，越遠越高越淡，疊出縱深
   const rng = mulberry(ci*7717 + 5 + SEED*97);
-  for (let i=0;i<2;i++) if (rng() < 0.6){ const x = x0 + rng()*CH, z = -200 - rng()*300, w = 20 + rng()*30, h = 60 + rng()*140;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w*(0.6 + rng()*0.6)), towerMat); m.position.set(x, farH(x, z) + h*0.4, z); m.rotation.set(0, rng()*3, (rng()-0.5)*0.15); g.add(m); }
+  const LAYERS = [ { n:3, p:0.75, z0:-118, z1:-190, w:[16,34], h:[22,70] }, { n:2, p:0.7, z0:-200, z1:-380, w:[22,44], h:[60,160] }, { n:1, p:0.6, z0:-400, z1:-540, w:[34,64], h:[120,260] } ];
+  for (const Lr of LAYERS) for (let i=0;i<Lr.n;i++) if (rng() < Lr.p){
+    const x = x0 + rng()*CH, z = Lr.z0 + rng()*(Lr.z1 - Lr.z0), w = Lr.w[0] + rng()*(Lr.w[1] - Lr.w[0]), h = Lr.h[0] + rng()*(Lr.h[1] - Lr.h[0]);
+    const m = new THREE.Mesh(ruinBlockGeo(rng, w, w*(0.6 + rng()*0.6), h), towerMat);
+    m.position.set(x, farH(x, z) - 3, z); m.rotation.set(0, (rng()-0.5)*0.6, rng() < 0.25 ? (rng()-0.5)*0.25 : 0); g.add(m); }
   scene.add(g); return g;
 }
 function updateFar(cx){
@@ -885,8 +988,8 @@ canvas.addEventListener('dblclick', () => ACT.reset());
 canvas.addEventListener('wheel', e => { if (!st.started) return; e.preventDefault(); cam.zoomT *= Math.exp(e.deltaY*0.0012); clampCam(); }, { passive:false });   // 桌機用滾輪縮放
 function clampCam(){ cam.orbitT = THREE.MathUtils.clamp(cam.orbitT, -1.3, 1.3); cam.zoomT = THREE.MathUtils.clamp(cam.zoomT, 0.3, 1.5); }   // 距離 33～165 公尺，不會無限拉遠
 
-// 色盤像天色一樣自動漸變：三組輪流，一圈 15 分鐘；每組停 3 分鐘、再用 2 分鐘慢慢轉成下一組
-const PAL_SEG = 300, PAL_HOLD = 180, PAL_CYCLE = PAL_SEG*PALS.length;
+// 色盤像天色一樣自動漸變：四組輪流，一圈 15 分鐘
+const PAL_CYCLE = 900, PAL_SEG = PAL_CYCLE/PALS.length, PAL_HOLD = PAL_SEG*0.6;   // 一圈固定 15 分鐘，四組各約 3 分 45 秒（停 2 分 15 秒、轉 1 分 30 秒）
 const PALV = PALS.map(P => ({ pal: P.pal.map(toVec), accent: toVec(P.accent), glow: toVec(P.glow) }));
 post.uniforms.pal.value = PALV[0].pal.map(v => v.clone()); post.uniforms.accent.value = PALV[0].accent.clone(); post.uniforms.glowC.value = PALV[0].glow.clone();
 st.palT = 0; st.palSun = PALS[0].sun; st.palGlow = PALS[0].glow;
