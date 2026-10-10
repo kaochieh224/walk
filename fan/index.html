@@ -615,8 +615,8 @@ const FAN_RPS = 0.12;   // 固定一種速度，非常緩慢：約 8 秒轉一�
 const WIND = 0.35;      // 慢速吊扇的風：拿來帶動窗簾、灰塵和風聲
 const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
 // 依實際畫面的邊緣算限制：沿畫面外框取 16 個方向，從眼睛射到房間的牆／地板，只要有一條打到地板或牆的 0.95 m 以下，
-// 就往預設角度收回。比起只看仰角寬鬆得多，手機也能明顯左右轉頭，但寬螢幕轉到底仍然看不到地板（2026-10-10）
-const SEE_FLOOR_Y = 0.95, _lq = new THREE.Quaternion(), _le = new THREE.Euler(0, 0, 0, 'ZXY'), _lv = new THREE.Vector3();
+// 就往預設角度收回（2026-10-10 再放寬到 0.55 m，手機轉向窗戶才看得到窗外）。比起只看仰角寬鬆得多，手機也能明顯左右轉頭，但寬螢幕轉到底仍然看不到地板（2026-10-10）
+const SEE_FLOOR_Y = 0.55, SEE_DOWN = Math.sin(THREE.MathUtils.degToRad(-9)), _lq = new THREE.Quaternion(), _le = new THREE.Euler(0, 0, 0, 'ZXY'), _lv = new THREE.Vector3();
 function lookOK(yaw, pitch){
   _lq.setFromEuler(_le.set(Math.PI/2 + pitch, 0, yaw, 'ZXY'));
   const tv = Math.tan(THREE.MathUtils.degToRad(camera.fov/2)), th = tv * camera.aspect;
@@ -626,6 +626,7 @@ function lookOK(yaw, pitch){
     const y = sd === 0 ? -tv : sd === 1 ? -tv + 2*tv*e : sd === 2 ? tv : tv - 2*tv*e;
     _lv.set(x, y, -1).normalize().applyQuaternion(_lq);
     if (_lv.y >= 0) continue;   // 往上看的方向一定打到天花板或牆的上半
+    if (_lv.y < SEE_DOWN) return false;   // 往下超過 9° 會看到床和棉被
     let t = (0 - EYE.y) / _lv.y;
     if (_lv.x) t = Math.min(t, ((_lv.x > 0 ? RX : -RX) - EYE.x) / _lv.x);
     if (_lv.z) t = Math.min(t, ((_lv.z > 0 ? RZ1 : RZ0) - EYE.z) / _lv.z);
@@ -835,6 +836,39 @@ function audioFrame(t, breeze, sk){
     m.next = t + d + 50 + Math.random()*70;
   }
 }
+/* ---------- 手機體感（2026-10-10 使用者要求）：左右／前後傾手機，視角慢慢跟著轉，帶明顯的延遲，像頭慢慢轉過去。
+   以第一次讀到的姿勢為基準；基準會在 20 秒左右慢慢跟上現在的姿勢，所以拿歪一陣子視角也會自己回正 ---------- */
+const gyro = { on:false, base:null, rx:0, ry:0, ty:0, tp:0, y:0, p:0 };
+const wrap180 = a => ((a + 540) % 360) - 180;
+function onOrient(e){
+  if (e.beta == null || e.gamma == null) return;
+  const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+  let x = e.gamma, y = e.beta;                       // 直拿：gamma＝左右傾，beta＝前後傾
+  if (ang === 90){ x = e.beta; y = -e.gamma; } else if (ang === -90 || ang === 270){ x = -e.beta; y = e.gamma; }
+  if (!gyro.base){ gyro.base = { x, y }; return; }
+  gyro.rx = THREE.MathUtils.clamp(wrap180(x - gyro.base.x), -40, 40);
+  gyro.ry = THREE.MathUtils.clamp(wrap180(y - gyro.base.y), -40, 40);
+}
+function startGyro(){
+  if (!matchMedia('(hover: none)').matches || typeof DeviceOrientationEvent === 'undefined') return;
+  const go = () => { gyro.on = true; addEventListener('deviceorientation', onOrient); };
+  if (typeof DeviceOrientationEvent.requestPermission === 'function'){
+    DeviceOrientationEvent.requestPermission().then(r => { if (r === 'granted') go(); }).catch(() => {});   // iOS：要在點擊裡請求
+  } else go();
+}
+function updateGyro(dt){
+  if (!gyro.on || !gyro.base) return;
+  // 基準慢慢跟上現在的姿勢（時間常數約 20 秒）
+  const kb = 1 - Math.exp(-dt/20);
+  gyro.base.x = wrap180(gyro.base.x + gyro.rx*kb); gyro.base.y = wrap180(gyro.base.y + gyro.ry*kb);
+  gyro.rx *= 1 - kb; gyro.ry *= 1 - kb;
+  gyro.ty = -THREE.MathUtils.degToRad(gyro.rx) * 1.4;  // 往右傾 → 往右轉
+  gyro.tp = THREE.MathUtils.degToRad(gyro.ry) * 1.0;   // 上緣往外傾 → 往頭頂那頭看
+  // 很慢地跟上：時間常數約 1.4 秒
+  const k = 1 - Math.exp(-dt/1.4);
+  gyro.y += (gyro.ty - gyro.y)*k; gyro.p += (gyro.tp - gyro.p)*k;
+}
+
 /* ---------- 每一格 ---------- */
 let last = performance.now(), T0 = last;
 function frame(now){
@@ -895,7 +929,14 @@ function frame(now){
   // 呼吸：鏡頭極輕微地起伏
   const br = Math.sin(t*Math.PI*2/5.2);
   camera.position.set(EYE.x, EYE.y + br*0.004, EYE.z);
-  camera.rotation.set(Math.PI/2 + look.pitch + br*0.0025, 0, look.yaw);
+  // 體感的偏移加在拖曳的視角上；超出看不到地板的範圍就按比例縮回
+  updateGyro(dt);
+  let gy = look.yaw + gyro.y, gp = look.pitch + gyro.p;
+  if ((gyro.y || gyro.p) && !lookOK(gy, gp)){
+    let lo = 0, hi = 1; for (let i = 0; i < 10; i++){ const m = (lo + hi)/2; if (lookOK(look.yaw + gyro.y*m, look.pitch + gyro.p*m)) lo = m; else hi = m; }
+    gy = look.yaw + gyro.y*lo; gp = look.pitch + gyro.p*lo;
+  }
+  camera.rotation.set(Math.PI/2 + gp + br*0.0025, 0, gy);
   dustMat.uniforms.uPx.value = Math.max(1, Math.round(RHGT/540));
 
 
@@ -926,6 +967,7 @@ document.getElementById('start').addEventListener('click', () => {
   document.getElementById('intro').classList.add('gone');
   unlockMedia(); startAudio();
   setUI(true); uiBtn.hidden = false;
+  startGyro();
 });
-window.__fan = { lookOK, st, look, ACT, scene, post, dustMat, sun, bounce };
+window.__fan = { gyro, lookOK, st, look, ACT, scene, post, dustMat, sun, bounce };
 </script>
