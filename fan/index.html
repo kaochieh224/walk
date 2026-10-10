@@ -85,7 +85,7 @@ const FAN = new THREE.Vector3(0, 0, (RZ0 + RZ1)/2);  // 吊扇在天花板正中
 // 預設正對吊扇的扇葉中心
 const HOME = (() => { const d = new THREE.Vector3(FAN.x - EYE.x, RH - 0.55 - EYE.y, FAN.z - EYE.z).normalize(); return { yaw: Math.atan2(-d.x, d.y), pitch: Math.asin(d.z) }; })();
 // 視角限制：只看得到天花板和牆的上半段。往腳或往頭那頭，畫面邊緣最低只到仰角 LOOK_FLOOR；左右只能從吊扇偏開 YAW_SPAN
-const LOOK_FLOOR = THREE.MathUtils.degToRad(14), YAW_SPAN = 0.6;
+const LOOK_FLOOR = THREE.MathUtils.degToRad(18), YAW_SPAN = 0.55;
 let PITCH_MIN = -0.8, PITCH_MAX = 0.5;
 
 /* ---------- 共用噪聲 ---------- */
@@ -107,7 +107,7 @@ rt.depthTexture = new THREE.DepthTexture(4, 4); rt.depthTexture.type = THREE.Uns
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0.5, 0.5, 0.5);
-const camera = new THREE.PerspectiveCamera(56, 1, 0.03, 60);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.03, 120);
 camera.rotation.order = 'ZXY';   // 先繞身體長軸轉頭，再在頭的座標裡抬頭／低頭
 camera.position.copy(EYE);
 
@@ -140,8 +140,15 @@ const post = new THREE.ShaderMaterial({
     void main(){
       vec3 c = texture2D(tScene, vUv).rgb;
       c *= ssao();
-      c += beams();
-      float b = bayer4(gl_FragCoord.xy);
+      vec3 bm = beams(); c += bm;
+      // 灰塵和風擾動網點（2026-10-10 使用者要求）：用一個慢慢流動的噪聲場把 Bayer 網點的格子推開，
+      // 網點會像被氣流推著緩緩飄移、交界處輕輕閃動；光柱裡灰塵多，擾動更明顯
+      float dk = clamp(dot(bm, vec3(.333)) * 2., 0., 1.);
+      vec2 fp = gl_FragCoord.xy / 70.;
+      vec2 off = vec2(bn(fp + vec2(uT * .035, uT * .01)), bn(fp * 1.3 + vec2(5.2, uT * .028))) - .5;
+      off *= 3. + 7. * dk;
+      float b = bayer4(gl_FragCoord.xy + floor(off));
+      b = fract(b + (bn(gl_FragCoord.xy * .12 + vec2(uT * .25, -uT * .18)) - .5) * (.08 + .3 * dk));
       // 只用自然色（2026-10-10 使用者拿掉四組色盤）：曝光 → ACES 色調映射 → sRGB → 每個色版用同一組 4×4 Bayer 網點量化成 7 階，保留點陣的顆粒但顏色是真的
       vec3 g = pow(aces(c * uExp), vec3(1./2.2));
       vec3 nat = clamp(floor(g * 6. + b) / 6., 0., 1.);
@@ -163,7 +170,7 @@ function resize(){
   camera.aspect = RWID / RHGT;
   // 橫式垂直視角 56°；直式改用較廣的視角，最多 78°
   const a = camera.aspect;
-  camera.fov = a >= 1 ? 56 : Math.min(78, 2*THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(28))*Math.max(1, 1.25/a)*0.92)));
+  camera.fov = a >= 1 ? 70 : Math.min(96, 2*THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(35))*Math.max(1, 1.25/a)*0.92)));   // 廣角一點（2026-10-10 使用者要求）
   camera.updateProjectionMatrix();
   // 往下最多看到畫面下緣碰到牆的中段；直式視角較廣，所以能往下的幅度更小
   const halfV = THREE.MathUtils.degToRad(camera.fov/2);
@@ -225,13 +232,44 @@ const GX = WX - T - 0.13, GRILL = { step:0.11, w:0.016, bars:[1.3, 1.78, 2.3] };
   for (const y of [WIN.y0-0.1, WIN.y1+0.1]){ const g = new THREE.BoxGeometry(0.16, 0.025, WIN.z1-WIN.z0+0.2); g.translate(GX+0.08, y, WM); geos.push(g); }   // 鐵窗伸出牆面的頂底板
   const m = new THREE.Mesh(mergeGeometries(geos), M.iron); m.castShadow = m.receiveShadow = true; scene.add(m);
 }
-// 窗外：亮的天空，加上遠處一排樓的剪影
-const sky = new THREE.Mesh(new THREE.PlaneGeometry(40, 20).rotateY(Math.PI/2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-sky.position.set(-14, 4, 0); scene.add(sky);
+// 窗外：藍天、慢慢飄的白雲，和對面一排公寓（2026-10-10 使用者要求）
+const skyMat = new THREE.ShaderMaterial({
+  uniforms:{ uT:{ value: 0 }, uI:{ value: 1 } },
+  vertexShader:`varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader:`
+    uniform float uT, uI; varying vec3 vW;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5); }
+    float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3. - 2.*f); return mix(mix(h(i), h(i + vec2(1,0)), f.x), mix(h(i + vec2(0,1)), h(i + vec2(1,1)), f.x), f.y); }
+    float fbm(vec2 p){ float v = 0., a = .5; for (int i = 0; i < 5; i++){ v += a * n(p); p = p * 2.03 + 7.1; a *= .5; } return v; }
+    void main(){
+      float e = clamp((vW.y + 4.) / 40., 0., 1.);                       // 越高越藍
+      vec3 sky = mix(vec3(.42, .62, .92), vec3(.1, .27, .85), pow(e, .6)) * 1.05;
+      vec2 q = vec2(vW.z * .045 + uT * .004, vW.y * .09);                 // 雲往一邊慢慢飄，橫向拉長
+      float c = smoothstep(.5, .78, fbm(q) * (.65 + .55 * smoothstep(.05, .45, e)));
+      vec3 cloud = mix(vec3(1.9, 1.86, 1.78), vec3(1.25, 1.3, 1.4), smoothstep(.55, .9, fbm(q * 1.7 + 3.)));   // 雲頂亮白、雲底帶點灰
+      gl_FragColor = vec4(mix(sky, cloud, c) * (.55 + .45 * uI), 1.);
+    }`,
+  depthWrite: true
+});
+const sky = new THREE.Mesh(new THREE.PlaneGeometry(180, 80).rotateY(Math.PI/2), skyMat);
+sky.position.set(-70, 25, 0); scene.add(sky);
 {
-  const geos = [];
-  for (let i = 0; i < 9; i++){ const h = 1.5 + R()*4, w = 1.5 + R()*2.5; const g = new THREE.BoxGeometry(1, h, w); g.translate(-12 + R()*2, h/2 - 3, -9 + i*2.4 + R()); geos.push(g); }
-  const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ color: 0x9a9a9a })); scene.add(m);
+  // 一排四到八層的公寓（低於窗外的視線，上面留出藍天），磁磚外牆配一格一格的窗，陽光照得到
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 64);
+  g.fillStyle = '#5d6670'; g.fillRect(10, 14, 44, 26);    // 一扇窗
+  g.fillStyle = '#9aa3aa'; g.fillRect(10, 14, 44, 4);     // 遮雨棚
+  g.fillStyle = '#d6d2ca'; g.fillRect(6, 44, 52, 6);      // 陽台欄板
+  const facade = new THREE.CanvasTexture(cv); facade.colorSpace = THREE.SRGBColorSpace; facade.magFilter = THREE.NearestFilter;
+  const tiles = [0xd9d3c4, 0xc9c3b6, 0xe2ddd2, 0xb9b8b2, 0xd0c4b0, 0xaeb4b6];
+  for (let i = 0; i < 12; i++){
+    const fl = 3 + Math.floor(R()*4), H = fl*3.1, W = 8 + R()*10, D = 8, z = -40 + i*7.5 + R()*2, x = -42 - R()*8;
+    const t = facade.clone(); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(Math.round(W/3.2), fl); t.needsUpdate = true;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(D, H, W), new THREE.MeshLambertMaterial({ color: tiles[i % tiles.length], map: t }));
+    m.position.set(x, H/2 - 4, z); scene.add(m);
+    // 頂樓的水塔
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.6, 10), new THREE.MeshLambertMaterial({ color: 0x8f949a })); tank.position.set(x + 1, H - 4 + 0.8, z + (R()-0.5)*W*0.5); scene.add(tank);
+  }
 }
 
 /* ---------- 窗簾：米黃色打褶厚簾，拉上一半。下擺被風吹得往室內鼓起，逆光的布透著暖黃，縫隙溢出光 ---------- */
@@ -272,7 +310,7 @@ const glowMat = new THREE.ShaderMaterial({
   fragmentShader:`
     uniform float uI; varying vec2 vP;
     void main(){
-      float a = exp(-dot(vP, vP) / 9.) * 1.1;   // 中間最亮，往外慢慢淡
+      float a = exp(-dot(vP, vP) / 5.) * 0.22;  // 太陽方向的一點暖色光暈；藍天要看得出來，所以不能太亮
       gl_FragColor = vec4(vec3(1.0, 0.9, 0.72) * a * uI, 1.);
     }`,
   transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
@@ -378,8 +416,16 @@ const rotor = new THREE.Group();
   for (const [x,y,r] of [[-0.19,0.24,0.5],[0.19,0.24,-0.5],[-0.19,-0.24,-0.5],[0.19,-0.24,0.5]]){ const tp = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.025), M.trim); tp.position.set(1.15+x, 1.62+y, RZ0+0.016); tp.rotation.z = r; scene.add(tp); }
   // 右牆：門框與門、電燈開關（冷氣已依使用者 2026-10-10 要求拿掉）
   box(0.04, 2.1, 0.06, M.trim, RX-0.02, 1.05, -1.45); box(0.04, 2.1, 0.06, M.trim, RX-0.02, 1.05, -0.55); box(0.04, 0.06, 0.96, M.trim, RX-0.02, 2.1, -1.0);
-  box(0.03, 2.05, 0.84, M.frame, RX-0.015, 1.025, -1.0);
-  const knob = box(0.05, 0.03, 0.03, M.fanDark, RX-0.05, 1.0, -0.65);
+  // 實木門（2026-10-10 使用者要求）：深一點的柚木色，門面上下兩塊淺淺的凸框
+  const doorWood = lam(0x8a5a36);
+  box(0.03, 2.05, 0.84, doorWood, RX-0.015, 1.025, -1.0);
+  for (const [y, h] of [[1.5, 0.8], [0.55, 0.7]]){ box(0.012, h, 0.62, lam(0x7a4e2e), RX-0.036, y, -1.0); }
+  // 喇叭鎖：圓形底座加一顆圓球形門把，拉絲金屬
+  const metal = new THREE.MeshStandardMaterial({ color: 0xc9c6bf, metalness: 0.75, roughness: 0.32 });
+  const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.012, 20).rotateZ(Math.PI/2), metal); rose.position.set(RX-0.036, 0.95, -0.66); rose.castShadow = true; scene.add(rose);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, 0.035, 14).rotateZ(Math.PI/2), metal); neck.position.set(RX-0.058, 0.95, -0.66); neck.castShadow = true; scene.add(neck);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.03, 20, 14), metal); ball.scale.set(0.8, 1, 1); ball.position.set(RX-0.09, 0.95, -0.66); ball.castShadow = true; scene.add(ball);
+  const keyhole = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.004, 8).rotateZ(Math.PI/2), M.iron); keyhole.position.set(RX-0.114, 0.95, -0.66); scene.add(keyhole);
   box(0.02, 0.11, 0.07, M.ceil, RX-0.01, 1.25, -0.4);
 }
 
@@ -425,7 +471,7 @@ function aimBounce(){
 
 // 窗外的台灣欒樹（2026-10-10 依使用者照片）：二回羽狀複葉的細長小葉、樹冠頂上一串串金黃色的花、紅褐色像小燈籠的蒴果。
 // 樹冠擋在陽光路徑上，室內的光斑跟著閃動；綠葉把光反射進窗，窗口的天光帶一點綠
-const KOEL = new THREE.Vector3(WX - 1.9, 3.1, WM + 0.2);   // 樹冠中心
+const KOEL = new THREE.Vector3(WX - 1.9, 3.3, WM + 1.5);   // 偏到窗簾那側，沒拉窗簾的半扇看得到藍天和對面的樓   // 樹冠中心
 const leafGeo = new THREE.PlaneGeometry(0.17, 0.05).translate(0.085, 0, 0);   // 細長的小葉，從葉柄那端長出去
 const LEAF_N = 2400, leafMesh = new THREE.InstancedMesh(leafGeo, M.leafOut, LEAF_N);
 leafMesh.castShadow = true; scene.add(leafMesh);
@@ -532,6 +578,7 @@ post.fragmentShader = post.fragmentShader.replace('/*BEAM*/', `
       acc += winMask(p) * dust;
     }
     acc *= len / float(N);
+    if (w.x < ${(WX - 0.05).toFixed(3)}) acc *= 0.35;   // 看向窗外時，光柱的霧不要把藍天和對面的樓蓋掉
     return uSC * acc * 3.2 * uBI;
   }
 `);
@@ -568,7 +615,28 @@ const DAY_LEN = 720;   // 中午到下午 5 點走一圈的秒數
 const FAN_RPS = 0.12;   // 固定一種速度，非常緩慢：約 8 秒轉一圈
 const WIND = 0.35;      // 慢速吊扇的風：拿來帶動窗簾、灰塵和風聲
 const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
-function clampLook(){ look.yawT = THREE.MathUtils.clamp(look.yawT, HOME.yaw - YAW_SPAN, HOME.yaw + YAW_SPAN); look.pitchT = THREE.MathUtils.clamp(look.pitchT, PITCH_MIN, PITCH_MAX); }
+// 依實際畫面四個角算限制：任何一角的仰角低於 CORNER_FLOOR 就往預設角度收回，桌機寬螢幕轉到底也看不到地板（2026-10-10）
+const CORNER_FLOOR = THREE.MathUtils.degToRad(12), _lq = new THREE.Quaternion(), _le = new THREE.Euler(0, 0, 0, 'ZXY'), _lv = new THREE.Vector3();
+function lookOK(yaw, pitch){
+  _lq.setFromEuler(_le.set(Math.PI/2 + pitch, 0, yaw, 'ZXY'));
+  const tv = Math.tan(THREE.MathUtils.degToRad(camera.fov/2)), th = tv * camera.aspect;
+  for (const [x, y] of [[-th, -tv], [th, -tv], [-th, tv], [th, tv], [0, -tv], [0, tv]]){
+    _lv.set(x, y, -1).normalize().applyQuaternion(_lq);
+    if (_lv.y < Math.sin(CORNER_FLOOR)) return false;
+  }
+  return true;
+}
+function clampLook(){
+  look.yawT = THREE.MathUtils.clamp(look.yawT, HOME.yaw - YAW_SPAN, HOME.yaw + YAW_SPAN); look.pitchT = THREE.MathUtils.clamp(look.pitchT, PITCH_MIN, PITCH_MAX);
+  if (lookOK(look.yawT, look.pitchT)) return;
+  // 先只收左右，再一起往預設角度收
+  let lo = 0, hi = 1; const y0 = look.yawT;
+  for (let i = 0; i < 14; i++){ const m = (lo + hi)/2; if (lookOK(HOME.yaw + (y0 - HOME.yaw)*m, look.pitchT)) lo = m; else hi = m; }
+  if (lookOK(HOME.yaw + (y0 - HOME.yaw)*lo, look.pitchT)){ look.yawT = HOME.yaw + (y0 - HOME.yaw)*lo; return; }
+  lo = 0; hi = 1; const p0 = look.pitchT;
+  for (let i = 0; i < 14; i++){ const m = (lo + hi)/2; if (lookOK(HOME.yaw + (y0 - HOME.yaw)*m, HOME.pitch + (p0 - HOME.pitch)*m)) lo = m; else hi = m; }
+  look.yawT = HOME.yaw + (y0 - HOME.yaw)*lo; look.pitchT = HOME.pitch + (p0 - HOME.pitch)*lo;
+}
 
 const KEYMAP = { m:'sound', o:'reset', '0':'reset', h:'ui' };
 const ACT = {
@@ -671,13 +739,18 @@ function startAudio(){
     const whL = F('lowpass', 900), whLG = G(0);   // 一層更柔的氣流，讓呼聲之間不會完全斷掉
     chain(loop(brown, 1.9), whL, whLG, fanPan);
     // 馬達：120 Hz 和它的倍頻，極小聲，兩個稍微走音的振盪器做出慢慢的拍頻
-    const humG = G(0), humF = F('lowpass', 520);
-    for (const [f, v] of [[120, 1], [120.35, 0.7], [240, 0.35], [360, 0.12]]){ const o = ac.createOscillator(); o.frequency.value = f; chain(o, G(v), humF); o.start(); }
-    chain(humF, humG, fanPan);
-    // 吊座每轉一圈一聲極輕的「喀」：短短一段衰減的噪音
-    const click = ac.createBuffer(1, Math.floor(SR*0.05), SR);
-    { const d = click.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2 - 1) * Math.exp(-i/(SR*0.006)); }
-    const clickF = F('bandpass', 2300, 3), clickG = G(0.05); chain(clickF, clickG, fanPan);
+    // 馬達：120 Hz 和它的倍頻，非常小聲，音量跟著每片葉子轉過一圈起伏，聽起來是一種「嗡—嗡—」的韻律
+    const humG = G(0), humAM = G(1), humF = F('lowpass', phone ? 900 : 520);
+    for (const [f, v] of [[120, 1], [120.35, 0.7], [240, 0.45], [360, 0.18], [480, 0.08]]){ const o = ac.createOscillator(); o.frequency.value = f; chain(o, G(v), humF); o.start(); }
+    chain(humF, humAM, humG, fanPan);
+    // 有東西鬆鬆的在晃：每轉一圈，燈罩／吊座的螺絲在某個角度「喀啦喀啦」輕碰幾下（短促衰減的噪音，高中頻）
+    const click = ac.createBuffer(1, Math.floor(SR*0.04), SR);
+    { const d = click.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2 - 1) * Math.exp(-i/(SR*0.0035)); }
+    const clickF = F('bandpass', 2600, 2.5), clickG = G(phone ? 0.05 : 0.035); chain(clickF, clickG, fanPan);
+    // 比較悶的一聲「咚」：吊桿在吊座裡輕輕晃到邊
+    const knock = ac.createBuffer(1, Math.floor(SR*0.09), SR);
+    { const d = knock.getChannelData(0); for (let i = 0; i < d.length; i++){ const t = i/SR; d[i] = (Math.sin(2*Math.PI*190*t) * 0.7 + (Math.random()*2 - 1) * 0.3) * Math.exp(-t/0.018); } }
+    const knockG = G(phone ? 0.05 : 0.03); chain(knockG, F('lowpass', phone ? 1400 : 700), fanPan);
     // 房間底噪
     const roomTone = chain(loop(brown, 2.7), F('lowpass', 240), G(phone ? 0.03 : 0.022)); roomTone.connect(room);
 
@@ -707,7 +780,7 @@ function startAudio(){
     chain(motoO, motoF, motoG, motoPan, win); motoO.start();
     chain(loop(pink, 2.2), F('bandpass', 260, 0.8), G(0.6), motoF);
 
-    audio = { ac, master, phone, whF, whG, whLG, humG, click, clickF, fanPan, outPan, outG, cicadas, cicBedG, rusG, trafG, moto, motoO, motoG, motoPan, lastRev: 0 };
+    audio = { ac, master, phone, whF, whG, whLG, humG, click, clickF, knock, knockG, humAM, fanPan, outPan, outG, cicadas, cicBedG, rusG, trafG, moto, motoO, motoG, motoPan, lastRev: 0 };
     resumeAudio();
   } catch (err) { audio = null; }
 }
@@ -715,15 +788,20 @@ function startAudio(){
 const _af = new THREE.Vector3(), _ar = new THREE.Vector3(), WIN_C = new THREE.Vector3(WX, (WIN.y0 + WIN.y1)/2, (WIN.z0 + WIN.z1)/2), FAN_C = new THREE.Vector3(FAN.x, RH - 0.5, FAN.z);
 function audioFrame(t, breeze, sk){
   const A = audio, ac = A.ac, at = ac.currentTime;
-  // 扇葉：每片葉子掠過時一次呼聲（3 片 × 每秒 0.12 圈）
-  const ph = (st.angle / (Math.PI*2) * 3) % 1, pulse = Math.pow(0.5 + 0.5*Math.cos((ph - 0.5)*Math.PI*2), 4);
-  A.whG.gain.setTargetAtTime((0.016 + 0.05*pulse) * (A.phone ? 1.5 : 1), at, 0.05);
-  A.whF.frequency.setTargetAtTime((A.phone ? 700 : 340) + 360*pulse, at, 0.06);
-  A.whLG.gain.setTargetAtTime(0.03, at, 0.5);
-  A.humG.gain.setTargetAtTime(A.phone ? 0.006 : 0.0045, at, 0.5);
-  const rev = Math.floor(st.angle / (Math.PI*2));
+  // 吊扇（2026-10-10 依使用者描述改）：很小聲、有韻律的馬達轉動聲為主，每片葉子轉過一次「嗡」起伏一次；風聲退到很淡
+  const ph = (st.angle / (Math.PI*2) * 3) % 1, pulse = Math.pow(0.5 + 0.5*Math.cos((ph - 0.5)*Math.PI*2), 3);
+  A.humAM.gain.setTargetAtTime(0.45 + 0.55*pulse, at, 0.08);
+  A.humG.gain.setTargetAtTime(A.phone ? 0.012 : 0.008, at, 0.5);
+  A.whG.gain.setTargetAtTime((0.004 + 0.012*pulse) * (A.phone ? 1.5 : 1), at, 0.06);
+  A.whF.frequency.setTargetAtTime((A.phone ? 700 : 340) + 300*pulse, at, 0.06);
+  A.whLG.gain.setTargetAtTime(0.012, at, 0.5);
+  // 晃動的小零件：每轉一圈在差不多同一個角度喀啦幾下，偶爾多一聲悶悶的「咚」
+  const rev = Math.floor(st.angle / (Math.PI*2) + 0.3);
   if (rev !== A.lastRev){ A.lastRev = rev;
-    if (Math.random() < 0.75){ const n = ac.createBufferSource(); n.buffer = A.click; n.playbackRate.value = 0.85 + Math.random()*0.3; n.connect(A.clickF); n.start(at + Math.random()*0.05); } }
+    const k = 2 + Math.floor(Math.random()*3);
+    for (let i = 0; i < k; i++){ const n = ac.createBufferSource(); n.buffer = A.click; n.playbackRate.value = 0.8 + Math.random()*0.4; const g = ac.createGain(); g.gain.value = 0.5 + Math.random()*0.5; n.connect(g); g.connect(A.clickF); n.start(at + i*(0.045 + Math.random()*0.035)); }
+    if (Math.random() < 0.45){ const n = ac.createBufferSource(); n.buffer = A.knock; n.playbackRate.value = 0.9 + Math.random()*0.2; n.connect(A.knockG); n.start(at + 0.2 + Math.random()*0.3); }
+  }
   // 轉頭：算出窗和吊扇在頭的左邊還是右邊
   _ar.set(1, 0, 0).applyQuaternion(camera.quaternion); _af.set(0, 0, -1).applyQuaternion(camera.quaternion);
   const toWin = WIN_C.clone().sub(camera.position).normalize(), toFan = FAN_C.clone().sub(camera.position).normalize();
@@ -786,7 +864,7 @@ function frame(now){
   skyWin.intensity = 1.7 + 0.9*sk; curWin.intensity = 0.4 + 1.2*sk;
   post.uniforms.uSC.value.set(sun.color.r, sun.color.g, sun.color.b);
   post.uniforms.uBI.value = sk; post.uniforms.uT.value = t; post.uniforms.uD.value.copy(sunDir);
-  glowMat.uniforms.uI.value = sk; M.curtain.emissive.copy(CURTAIN_GLOW).multiplyScalar(0.25 + 0.75*sk);
+  glowMat.uniforms.uI.value = sk; skyMat.uniforms.uT.value = t; skyMat.uniforms.uI.value = sk; M.curtain.emissive.copy(CURTAIN_GLOW).multiplyScalar(0.25 + 0.75*sk);
   dustMat.uniforms.uI.value = sk; dustMat.uniforms.uT.value = t; dustMat.uniforms.uFan.value = WIND;
   updateLeaves(t, breeze);
   updateCurtains(t, 0.25 + 0.75*WIND + 0.3*breeze);
