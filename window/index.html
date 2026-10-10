@@ -101,10 +101,10 @@ camera.rotation.order = 'YXZ';
 camera.position.copy(EYE);
 
 const post = new THREE.ShaderMaterial({
-  uniforms:{ tScene:{ value: rt.texture }, tDepth:{ value: rt.depthTexture }, uInvProj:{ value: new THREE.Matrix4() }, uT:{ value: 0 }, uExp:{ value: 1.0 }, uPS:{ value: new THREE.Vector2(1,1) }, uFlash:{ value: 0 }, uRain:{ value: 0 } },
+  uniforms:{ tScene:{ value: rt.texture }, tDepth:{ value: rt.depthTexture }, uInvProj:{ value: new THREE.Matrix4() }, uT:{ value: 0 }, uExp:{ value: 1.0 }, uPS:{ value: new THREE.Vector2(1,1) }, uFlash:{ value: 0 }, uRain:{ value: 0 }, uAsp:{ value: 1.78 }, uGlare:{ value: 1 }, uOut:{ value: 1.5 } },
   vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
   fragmentShader:`
-    uniform sampler2D tScene; uniform sampler2D tDepth; uniform mat4 uInvProj; uniform float uT, uExp, uFlash, uRain; uniform vec2 uPS; varying vec2 vUv;
+    uniform sampler2D tScene; uniform sampler2D tDepth; uniform mat4 uInvProj; uniform float uT, uExp, uFlash, uRain, uAsp, uGlare, uOut; uniform vec2 uPS; varying vec2 vUv;
     float bayer2(vec2 a){ a=floor(a); return fract(dot(a, vec2(.5, a.y*.75))); }
     float bayer4(vec2 a){ return bayer2(.5*a)*.25 + bayer2(a); }
     float bh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
@@ -127,9 +127,28 @@ const post = new THREE.ShaderMaterial({
       return clamp(1. - occ / 10. * 1.5, 0.3, 1.);
     }
     vec3 aces(vec3 x){ return clamp((x*(2.51*x + .03)) / (x*(2.43*x + .59) + .14), 0., 1.); }
+    // 逆光的眩光：窗外亮處往四周暈開（兩圈取樣），再加一層整片的霧光，強度慢慢呼吸，像眼睛被光晃到
+    vec3 glare(float j){
+      vec3 bl = vec3(0.), veil = vec3(0.);
+      for (int i = 0; i < 20; i++){
+        float fi = float(i), rr = (fi + .5) / 20., a = j * 6.2832 + fi * 2.3999;
+        vec2 o = vec2(cos(a) / uAsp, sin(a)) * (.015 + .16 * rr * rr);
+        vec3 s = texture2D(tScene, vUv + o).rgb * step(2.4, length(vpos(vUv + o)));   // 只有窗外的亮處會暈開
+        bl += max(s * uExp * uOut - .7, 0.) * (1.15 - rr);
+        veil += s;
+      }
+      veil = mix(veil, vec3(dot(veil, vec3(.299, .587, .114))), .6);
+      return bl / 20. * 1.4 + veil / 20. * .3;
+    }
     void main(){
       vec3 c = texture2D(tScene, vUv).rgb;
       c *= ssao();
+      // 室內偏灰暗：近處（窗框以內）降低飽和度、壓暗一點
+      float dIn = length(vpos(vUv));
+      float inK = 1. - smoothstep(1.9, 2.4, dIn);
+      c = mix(c, vec3(dot(c, vec3(.299, .587, .114))), .5 * inK) * mix(uOut, .6, inK);   // 窗外過曝一點、室內壓暗
+      float br = 1. + .18 * sin(uT * .37) + .08 * sin(uT * 1.13);
+      c += glare(bayer4(gl_FragCoord.xy)) * uGlare * br;
       c += uFlash * vec3(.75, .8, 1.);                       // 閃電
       vec2 q = vUv - .5; c *= 1. - dot(q, q) * .55;            // 鏡頭暗角：室內更暗、窗外更亮
       // 網點被空氣輕輕推動（與吊扇相同），下雨時多一點閃動
@@ -154,7 +173,7 @@ function resize(){
   renderer.setSize(RWID, RHGT, false);
   canvas.style.width = RWID*SCALE/dpr + 'px'; canvas.style.height = RHGT*SCALE/dpr + 'px';
   rt.setSize(RWID, RHGT); rt.depthTexture.image.width = RWID; rt.depthTexture.image.height = RHGT;
-  camera.aspect = RWID / RHGT;
+  camera.aspect = RWID / RHGT; post.uniforms.uAsp.value = camera.aspect;
   // 橫式垂直視角 60°；直式加廣，讓整面窗放得進來
   const a = camera.aspect;
   camera.fov = a >= 1 ? 64 : Math.min(98, 2*THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(32))*Math.max(1, 1.3/a)*0.9)));
@@ -341,7 +360,7 @@ const glassMat = new THREE.ShaderMaterial({
 
 // 室內只吃到一小部分的半球環境光（天花板和牆擋住了天空）：用一張 1×1 的 aoMap 壓低間接光，窗口面光源照常
 {
-  const ao = new THREE.DataTexture(new Uint8Array([70, 70, 70, 255]), 1, 1); ao.needsUpdate = true;
+  const ao = new THREE.DataTexture(new Uint8Array([40, 40, 40, 255]), 1, 1); ao.needsUpdate = true;
   for (const o of scene.children) if (o.isMesh && o.material && o.material.isMeshStandardMaterial){ o.material.aoMap = ao; o.material.aoMapIntensity = 1; o.material.needsUpdate = true; }
   AWN.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial){ o.material.aoMap = ao; } });
 }
@@ -1921,7 +1940,7 @@ function frame(now){
   const grey = (c, k) => { const l = (c.r + c.g + c.b)/3; return c.lerp(_gc.setRGB(l, l, l), k); };
   hemi.color.copy(SKY.hs); grey(hemi.color, rain*0.6); hemi.groundColor.copy(SKY.hg);
   hemi.intensity = SKY.hi * 1.3 * (1 - 0.35*rain) + fl*2.5;
-  winLight.color.copy(SKY.hor).lerp(_gc.set(0xf2f0e2), 0.6).lerp(_gc.set(0xc8dcb8), 0.2); winLight.intensity = (0.05 + 1.05*clamp((SKY.hi - 0.16)/0.54, 0, 1)*(1 - 0.4*rain)) + fl*6;
+  winLight.color.copy(SKY.hor).lerp(_gc.set(0xf2f0e2), 0.6).lerp(_gc.set(0xc8dcb8), 0.2); winLight.intensity = (0.04 + 0.6*clamp((SKY.hi - 0.16)/0.54, 0, 1)*(1 - 0.4*rain)) + fl*6;
   roomLamp.intensity = 2.2 * ss(night, 0.3, 0.9);
   for (const L of LAMPS) L.intensity = 60 * ss(night, 0.25, 0.8);
   for (const [m, k] of NIGHT_GLOW) m.emissiveIntensity = k * ss(night, 0.2, 0.75) * (m === headM || m === tailM ? 1 : 1) + (m === headM ? rain*0.6 : 0);
@@ -1938,7 +1957,7 @@ function frame(now){
   // 濕的路面：顏色變深、變亮滑
   M.asphalt.roughness = 0.95 - 0.55*rain; M.asphalt.color.setRGB(0.6 - 0.25*rain, 0.61 - 0.25*rain, 0.63 - 0.24*rain);
   post.uniforms.uT.value = t; post.uniforms.uFlash.value = fl * 0.25; post.uniforms.uRain.value = rain;
-  post.uniforms.uExp.value = 1.15 + 0.1*night;
+  post.uniforms.uExp.value = 1.5 - 0.3*night; post.uniforms.uGlare.value = (1 - 0.6*night)*(1 - 0.5*rain); post.uniforms.uOut.value = 1 + 0.55*clamp((SKY.hi - 0.3)/0.4, 0, 1)*(1 - 0.75*rain);
 
   updateTraffic(t, dt);
   updateFarBirds(t, dt);
