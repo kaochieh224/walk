@@ -767,6 +767,13 @@ const ACT = {
 };
 const keys = new Set();
 addEventListener('keydown', e => {
+  // F：切換全螢幕（2026-10-10 使用者要求）；Cmd/Ctrl+F 留給瀏覽器搜尋
+  if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat){
+    const d = document, el = d.documentElement;
+    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else { const req = el.requestFullscreen || el.webkitRequestFullscreen; if (req) { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } }
+    return;
+  }
   if (!st.started) return;
   const k = e.key.toLowerCase();
   if (KEYMAP[k]) { ACT[KEYMAP[k]](); return; }
