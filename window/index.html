@@ -233,7 +233,7 @@ box(RX*2, 0.06, 0.05, M.wall, 0, RH-0.03, 0.025); box(RX*2, 0.09, 0.02, M.wall, 
   sash(WIN.x0 + 0.05, 0.04, FZ + 0.03);
   sash(WIN.x0 + 0.1, 0.07, FZ - 0.03);   // 右扇整個推到左邊，右半邊打開（使用者要窗戶打開）
   // 窗台：大理石，從窗框伸進室內一點
-  box(W + 0.4, 0.04, 0.36, M.marble, 0, WIN.y0 - 0.02, 0.05);
+  box(W + 0.3, 0.018, 0.2, M.marble, 0, WIN.y0 - 0.009, -0.02);   // 薄薄一片，邊緣只有 1.8 公分
 }
 // 往外推開的那格氣窗（左格），上緣鉸鏈、下緣往外傾約 24°
 const AWN = new THREE.Group(); AWN.position.set((WIN.x0 + 0.02)/2, WIN.y1 - 0.05, FZ - 0.02); AWN.rotation.x = 0.42; scene.add(AWN);
@@ -316,29 +316,19 @@ const glassMat = new THREE.ShaderMaterial({
   const ag = new THREE.Mesh(new THREE.PlaneGeometry(-WIN.x0 - 0.12, WIN.y1 - TRANSOM - 0.12), glassMat); ag.position.set(0, -(WIN.y1 - TRANSOM - 0.08)/2, 0); ag.renderOrder = 2; AWN.add(ag);
 }
 
-/* ---------- 窗簾（收在左邊）、窗台上的木雕和盆栽（沒有桌子，直接坐在窗前） ---------- */
+/* ---------- 窗簾（收在左邊）、窗台上的木雕（沒有桌子，直接坐在窗前） ---------- */
 {
   // 深咖啡色的布簾，整束收在窗的左邊，打褶
   const cw = 0.95, ch = RH - 0.08 - 0.05, g = new THREE.PlaneGeometry(cw, ch, 48, 16), p = g.attributes.position;
   for (let i = 0; i < p.count; i++){ const x = p.getX(i), y = p.getY(i), hang = (ch/2 - y)/ch; p.setZ(i, Math.sin(x/cw*Math.PI*14) * (0.05 + 0.02*hang) + Math.sin(x*3 + y)*0.01); }
   g.computeVertexNormals();
-  const m = new THREE.Mesh(g, std(0x4b3a2e, { side: THREE.DoubleSide, flatShading: false })); m.position.set(WIN.x0 - 0.6, 0.05 + ch/2, 0.2); m.castShadow = m.receiveShadow = true; scene.add(m);
-  box(RX*2 - 0.2, 0.03, 0.03, M.aluDark, 0, RH - 0.06, 0.2);
+  const m = new THREE.Mesh(g, std(0x4b3a2e, { side: THREE.DoubleSide, flatShading: false })); m.position.set(-0.55 - cw/2, 0.05 + ch/2, 0.1); m.castShadow = m.receiveShadow = true; scene.add(m);   // 拉過來一點：從座位看過去，遮掉窗子左邊約五分之一（布簾比玻璃靠近眼睛，所以邊緣放在 x = -0.55）
+  box(RX*2 - 0.2, 0.03, 0.03, M.aluDark, 0, RH - 0.06, 0.1);
   // 窗台左邊：一尊細長的木雕（依使用者照片）
   const wd = std(0x4a3426);
   const fig = new THREE.Mesh(new THREE.LatheGeometry([[0,0],[0.06,0],[0.06,0.03],[0.035,0.05],[0.04,0.18],[0.03,0.3],[0.045,0.42],[0.035,0.52],[0.025,0.56],[0.04,0.62],[0.035,0.7],[0,0.72]].map(([x,y]) => new THREE.Vector2(x,y)), 7), wd);
   fig.position.set(WIN.x0 + 0.22, WIN.y0, 0.12); fig.castShadow = true; scene.add(fig);
   box(0.16, 0.06, 0.16, wd, WIN.x0 + 0.22, WIN.y0 + 0.03, 0.12);
-  // 窗台右邊：一小盆黃金葛
-  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.16, 10), std(0xb7643f)); pot.position.set(WIN.x1 - 0.4, WIN.y0 + 0.08, 0.15); pot.castShadow = true; scene.add(pot);
-  const lg = new THREE.ShapeGeometry((() => { const s = new THREE.Shape(); s.moveTo(0, 0); s.bezierCurveTo(0.05, 0.02, 0.05, 0.07, 0, 0.1); s.bezierCurveTo(-0.05, 0.07, -0.05, 0.02, 0, 0); return s; })(), 3);
-  const lm = std(0x5c8f34, { side: THREE.DoubleSide });
-  for (let i = 0; i < 26; i++){
-    const a = R()*Math.PI*2, r = R()*0.12, l = new THREE.Mesh(lg, lm);
-    const down = R() < 0.4;   // 幾片垂到窗台外緣
-    l.position.set(WIN.x1 - 0.4 + Math.cos(a)*r*(down ? 1.6 : 1), WIN.y0 + (down ? 0.02 + R()*0.1 : 0.16 + R()*0.12), 0.15 + Math.sin(a)*r*(down ? 1.6 : 1));
-    l.rotation.set(-0.6 - R()*0.8, a, (R()-0.5)*0.8); l.castShadow = true; scene.add(l);
-  }
 }
 
 // 室內只吃到一小部分的半球環境光（天花板和牆擋住了天空）：用一張 1×1 的 aoMap 壓低間接光，窗口面光源照常
