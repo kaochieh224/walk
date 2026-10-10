@@ -67,11 +67,11 @@ const BASE_H = 540;   // 內部解析度與前兩個場景相同：點陣顆粒�
 
 // 二樓的房間（公尺）：窗牆內面在 z = 0，室內往 +z；窗外往 -z 是街道。地板 y = 0，街面 y = GROUND
 const RX = 3.4, RZ1 = 4.6, RH = 3.0, WT = 0.3;
-const WIN = { x0:-2.7, x1:2.7, y0:0.72, y1:2.78 };   // 窗洞：依使用者照片，大面鋁窗，下段推拉窗、上段一排氣窗
-const TRANSOM = 2.22, FZ = -0.15;                    // 氣窗橫料高度、窗框所在的深度
+const WIN = { x0:-1.2, x1:1.2, y0:0.9, y1:2.72 };   // 窗洞：照使用者的圖一（吊扇房間那扇）：兩扇推拉窗、上方氣窗
+const TRANSOM = 2.24, FZ = -0.15;                    // 氣窗橫料高度、窗框所在的深度
 const GROUND = -3.8;                                 // 街面（二樓）
-const EYE = new THREE.Vector3(0.1, 1.25, 1.9);      // 坐在窗前桌邊的眼睛
-const HOME = { yaw: 0, pitch: 0.06 };
+const EYE = new THREE.Vector3(0, 1.15, 2.4);      // 沒有桌子，直接坐在窗前椅子上的眼睛（使用者的圖二，第一人稱）
+const HOME = { yaw: 0, pitch: 0.12 };
 const YAW_SPAN = 0.85, PITCH_MIN = -0.78, PITCH_MAX = 0.42;
 // 街道配置（z）：近側人行道 0～-4、路面 -4～-13（兩側停車帶、雙向各一車道）、對面人行道 -13～-16.5、騎樓到 -19.5
 const ROAD0 = -4, ROAD1 = -13, FAR_WALK = -16.5, ARCADE = -19.5;
@@ -101,16 +101,17 @@ camera.rotation.order = 'YXZ';
 camera.position.copy(EYE);
 
 const post = new THREE.ShaderMaterial({
-  uniforms:{ tScene:{ value: rt.texture }, tDepth:{ value: rt.depthTexture }, uInvProj:{ value: new THREE.Matrix4() }, uT:{ value: 0 }, uExp:{ value: 1.0 }, uPS:{ value: new THREE.Vector2(1,1) }, uFlash:{ value: 0 }, uRain:{ value: 0 }, uAsp:{ value: 1.78 }, uGlare:{ value: 1 }, uOut:{ value: 1.5 } },
+  uniforms:{ tScene:{ value: rt.texture }, tDepth:{ value: rt.depthTexture }, uInvProj:{ value: new THREE.Matrix4() }, uT:{ value: 0 }, uExp:{ value: 1.0 }, uPS:{ value: new THREE.Vector2(1,1) }, uFlash:{ value: 0 }, uRain:{ value: 0 }, uAsp:{ value: 1.78 }, uGlare:{ value: 1 }, uOut:{ value: 1.5 }, uViewInv:{ value: new THREE.Matrix4() } },
   vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
   fragmentShader:`
-    uniform sampler2D tScene; uniform sampler2D tDepth; uniform mat4 uInvProj; uniform float uT, uExp, uFlash, uRain, uAsp, uGlare, uOut; uniform vec2 uPS; varying vec2 vUv;
+    uniform sampler2D tScene; uniform sampler2D tDepth; uniform mat4 uInvProj; uniform float uT, uExp, uFlash, uRain, uAsp, uGlare, uOut; uniform mat4 uViewInv; uniform vec2 uPS; varying vec2 vUv;
     float bayer2(vec2 a){ a=floor(a); return fract(dot(a, vec2(.5, a.y*.75))); }
     float bayer4(vec2 a){ return bayer2(.5*a)*.25 + bayer2(a); }
     float bh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
     float bn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(bh(i),bh(i+vec2(1,0)),f.x), mix(bh(i+vec2(0,1)),bh(i+vec2(1,1)),f.x), f.y); }
     // 室內牆角、物體交界處的漫射遮蔽（螢幕空間 AO）
     vec3 vpos(vec2 uv){ float z = texture2D(tDepth, uv).x*2. - 1.; vec4 v = uInvProj * vec4(uv*2. - 1., z, 1.); return v.xyz / v.w; }
+    float wz(vec2 uv){ return (uViewInv * vec4(vpos(uv), 1.)).z; }   // 世界座標 z：窗框外（z < -0.3）就是窗外
     float ssao(){
       vec3 P = vpos(vUv);
       if (-P.z > 9.) return 1.;
@@ -133,7 +134,7 @@ const post = new THREE.ShaderMaterial({
       for (int i = 0; i < 20; i++){
         float fi = float(i), rr = (fi + .5) / 20., a = j * 6.2832 + fi * 2.3999;
         vec2 o = vec2(cos(a) / uAsp, sin(a)) * (.015 + .16 * rr * rr);
-        vec3 s = texture2D(tScene, vUv + o).rgb * step(2.4, length(vpos(vUv + o)));   // 只有窗外的亮處會暈開
+        vec3 s = texture2D(tScene, vUv + o).rgb * (1. - step(-0.3, wz(vUv + o)));   // 只有窗外的亮處會暈開
         bl += max(s * uExp * uOut - .7, 0.) * (1.15 - rr);
         veil += s;
       }
@@ -144,8 +145,7 @@ const post = new THREE.ShaderMaterial({
       vec3 c = texture2D(tScene, vUv).rgb;
       c *= ssao();
       // 室內偏灰暗：近處（窗框以內）降低飽和度、壓暗一點
-      float dIn = length(vpos(vUv));
-      float inK = 1. - smoothstep(1.9, 2.4, dIn);
+      float inK = smoothstep(-0.45, -0.2, wz(vUv));
       c = mix(c, vec3(dot(c, vec3(.299, .587, .114))), .5 * inK) * mix(uOut, .6, inK);   // 窗外過曝一點、室內壓暗
       float br = 1. + .18 * sin(uT * .37) + .08 * sin(uT * 1.13);
       c += glare(bayer4(gl_FragCoord.xy)) * uGlare * br;
@@ -210,73 +210,67 @@ box(RX*2+WT*2, RH-WIN.y1+WT, WT, M.wall, 0, (RH+WT+WIN.y1)/2, -WT/2);
 box(WIN.x0+RX+WT, WIN.y1-WIN.y0, WT, M.wall, (-RX-WT+WIN.x0)/2, (WIN.y0+WIN.y1)/2, -WT/2);
 box(RX+WT-WIN.x1, WIN.y1-WIN.y0, WT, M.wall, (WIN.x1+RX+WT)/2, (WIN.y0+WIN.y1)/2, -WT/2);
 // 樓下與樓上：讓整棟樓的影子落在街上
-box(30, -GROUND, 14, M.concrete, 0, GROUND/2, 7 - 0.3);
+box(30, -GROUND - WT, 14, M.concrete, 0, (GROUND - WT)/2, 7 - 0.3);   // 頂面停在樓板下，不和地板同一平面（原本會互相搶深度而閃爍）
 box(30, 6, 14, M.concrete, 0, RH + WT + 3, 7 - 0.3);
 // 天花板收邊、踢腳板
 box(RX*2, 0.06, 0.05, M.wall, 0, RH-0.03, 0.025); box(RX*2, 0.09, 0.02, M.wall, 0, 0.045, 0.01);
 
-/* ---------- 窗：依使用者照片，白色鋁框大窗。下段：左右固定窗、中間兩扇推拉窗（右扇稍微推開）；上段一排氣窗，一扇往外推開 ---------- */
-const BAYS = [WIN.x0, -1.35, 0, 1.35, WIN.x1];
+/* ---------- 窗：照使用者的圖一（吊扇房間那扇）。白色鋁框，下段兩扇推拉窗，上段兩格氣窗（左格往外推開），窗外一層寬大的鐵窗 ---------- */
 {
   const fr = (w,h,d,x,y,z,m = M.alu) => box(w,h,d,m,x,y,z);
-  // 外框
-  fr(WIN.x1-WIN.x0, 0.06, 0.12, 0, WIN.y0+0.03, FZ);
-  fr(WIN.x1-WIN.x0, 0.06, 0.12, 0, WIN.y1-0.03, FZ);
-  fr(0.06, WIN.y1-WIN.y0, 0.12, WIN.x0+0.03, (WIN.y0+WIN.y1)/2, FZ);
-  fr(0.06, WIN.y1-WIN.y0, 0.12, WIN.x1-0.03, (WIN.y0+WIN.y1)/2, FZ);
-  fr(WIN.x1-WIN.x0, 0.07, 0.13, 0, TRANSOM, FZ);                                  // 氣窗橫料
-  for (const x of [-1.35, 1.35]) fr(0.06, WIN.y1-WIN.y0, 0.12, x, (WIN.y0+WIN.y1)/2, FZ);   // 分隔直料
-  fr(0.04, WIN.y1-TRANSOM, 0.08, 0, (TRANSOM+WIN.y1)/2, FZ);
-  // 推拉窗：兩扇各自的窗框（左扇在內軌、右扇在外軌並往左推開一點）
+  const W = WIN.x1 - WIN.x0, H = WIN.y1 - WIN.y0, ym = (WIN.y0 + WIN.y1)/2;
+  fr(W, 0.05, 0.1, 0, WIN.y0 + 0.025, FZ); fr(W, 0.05, 0.1, 0, WIN.y1 - 0.025, FZ);
+  fr(0.05, H, 0.1, WIN.x0 + 0.025, ym, FZ); fr(0.05, H, 0.1, WIN.x1 - 0.025, ym, FZ);
+  fr(W, 0.045, 0.08, 0, TRANSOM, FZ);                                         // 氣窗橫料
+  fr(0.035, WIN.y1 - TRANSOM, 0.035, 0, (TRANSOM + WIN.y1)/2, FZ);            // 氣窗中間直料
+  // 推拉窗：兩扇各自的窗框，左扇在內軌、右扇在外軌，在中間交疊
   const sash = (x0, x1, z) => {
-    const yb = WIN.y0 + 0.06, yt = TRANSOM - 0.035, ym = (yb+yt)/2;
+    const yb = WIN.y0 + 0.05, yt = TRANSOM - 0.025, ys = (yb + yt)/2;
     fr(x1-x0, 0.05, 0.04, (x0+x1)/2, yb + 0.025, z); fr(x1-x0, 0.05, 0.04, (x0+x1)/2, yt - 0.025, z);
-    fr(0.05, yt-yb, 0.04, x0 + 0.025, ym, z); fr(0.05, yt-yb, 0.04, x1 - 0.025, ym, z);
-    box(0.02, 0.12, 0.03, M.aluDark, x1 - 0.05, ym, z + 0.03);                     // 勾鎖
+    fr(0.05, yt-yb, 0.04, x0 + 0.025, ys, z); fr(0.05, yt-yb, 0.04, x1 - 0.025, ys, z);
+    box(0.02, 0.12, 0.03, M.aluDark, x1 - 0.05, ys, z + 0.03);                // 勾鎖
   };
-  sash(-1.33, 0.04, FZ + 0.035);
-  sash(-0.3, 1.06, FZ - 0.035);
-  // 窗台：大理石，從窗框一路伸進室內
-  box(WIN.x1-WIN.x0+0.5, 0.04, 0.74, M.marble, 0, WIN.y0 - 0.02, 0.07);
+  sash(WIN.x0 + 0.05, 0.04, FZ + 0.03);
+  sash(-0.04, WIN.x1 - 0.05, FZ - 0.03);
+  // 窗台：大理石，從窗框伸進室內一點
+  box(W + 0.4, 0.04, 0.36, M.marble, 0, WIN.y0 - 0.02, 0.05);
 }
-// 往外推開的那扇氣窗（第二格），上緣鉸鏈、下緣往外傾約 24°
-const AWN = new THREE.Group(); AWN.position.set(-0.675, WIN.y1 - 0.06, FZ - 0.02); AWN.rotation.x = 0.42; scene.add(AWN);
+// 往外推開的那格氣窗（左格），上緣鉸鏈、下緣往外傾約 24°
+const AWN = new THREE.Group(); AWN.position.set((WIN.x0 + 0.02)/2, WIN.y1 - 0.05, FZ - 0.02); AWN.rotation.x = 0.42; scene.add(AWN);
 {
-  const w = 1.25, h = WIN.y1 - TRANSOM - 0.1;
+  const w = -WIN.x0 - 0.08, h = WIN.y1 - TRANSOM - 0.08;
   for (const [ww, hh, x, y] of [[w, 0.04, 0, -0.02], [w, 0.04, 0, -h + 0.02], [0.04, h, -w/2 + 0.02, -h/2], [0.04, h, w/2 - 0.02, -h/2]]){
     const m = new THREE.Mesh(new THREE.BoxGeometry(ww, hh, 0.035), M.alu); m.position.set(x, y, 0); m.castShadow = true; AWN.add(m);
   }
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.015, 0.22), M.aluDark); arm.position.set(0.5, -h + 0.05, 0.1); arm.rotation.x = 0.4; AWN.add(arm);   // 撐桿
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.015, 0.22), M.aluDark); arm.position.set(w/2 - 0.1, -h + 0.05, 0.1); arm.rotation.x = 0.4; AWN.add(arm);   // 撐桿
 }
-// 外層鐵窗：窗外凸出一個大鐵籠，方管粗、間距寬（直料約半米一支），深灰漆；底下兩根橫桿可放盆栽
+// 外層鐵窗（圖一的樣式，結構放大）：比窗洞寬一圈、往外凸出約 45 公分的鐵籠；直桿每 11 公分一根，三道橫桿，頂底板連到牆上，側面也是直桿
+const GRILL = { z: -WT - 0.45, step: 0.11, bars: [1.3, 1.78, 2.3] };
 {
-  const IR = std(0x34363a, { roughness: 0.6, metalness: 0.35 });
-  const z0 = -0.34, z1 = -0.88, zc = (z0 + z1)/2, dz = z0 - z1;
-  const x0 = WIN.x0 - 0.12, x1 = WIN.x1 + 0.12, y0 = WIN.y0 - 0.12, y1 = WIN.y1 + 0.12, t = 0.05;
-  const W = x1 - x0, H = y1 - y0, ym = (y0 + y1)/2;
-  // 外框：正面四邊、側面上下、四根角柱
-  box(W, t, t, IR, 0, y0, z1); box(W, t, t, IR, 0, y1, z1);
-  for (const x of [x0, x1]){ box(t, H, t, IR, x, ym, z1); box(t, t, dz, IR, x, y0, zc); box(t, t, dz, IR, x, y1, zc); box(t*0.8, H, t*0.8, IR, x, ym, z0 + 0.02); }
-  // 正面直料：間距寬
-  const n = 10; for (let i = 1; i < n; i++) box(0.035, H, 0.035, IR, x0 + W*i/n, ym, z1);
-  // 正面兩道橫料（一高一低），側面一道
-  for (const y of [y0 + H*0.36, y0 + H*0.72]){ box(W, 0.035, 0.035, IR, 0, y, z1); for (const x of [x0, x1]) box(0.035, 0.035, dz, IR, x, y, zc); }
-  // 側面直料
-  for (const x of [x0, x1]) box(0.035, H, 0.035, IR, x, ym, zc);
-  // 底部放盆栽的橫桿、上緣幾根往牆裡固定的支架
-  for (const z of [z0 - 0.15, z1 + 0.12]) box(W, 0.03, 0.03, IR, 0, y0 + 0.02, z);
-  for (let i = 0; i <= 4; i++) box(0.035, 0.035, dz, IR, x0 + W*i/4, y1, zc);
+  const IR = std(0x3a3937, { roughness: 0.6, metalness: 0.3 });
+  const geos = [], add = (w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); geos.push(g); };
+  const x0 = WIN.x0 - 0.2, x1 = WIN.x1 + 0.2, y0 = WIN.y0 - 0.12, y1 = WIN.y1 + 0.12, H = y1 - y0, ym = (y0 + y1)/2;
+  const zf = GRILL.z, zw = -WT, dz = zw - zf, zc = (zf + zw)/2;
+  for (let x = x0 + 0.06; x < x1 - 0.03; x += GRILL.step) add(0.018, H, 0.018, x, ym, zf);                  // 正面直桿
+  for (const y of [y0 + 0.03, ...GRILL.bars, y1 - 0.03]) add(x1 - x0 + 0.04, 0.025, 0.035, 0, y, zf);      // 正面橫桿
+  for (const x of [x0, x1]){
+    add(0.035, H, 0.035, x, ym, zf);                                                                     // 角柱
+    for (let z = zf + 0.11; z < zw - 0.03; z += GRILL.step) add(0.018, H, 0.018, x, ym, z);              // 側面直桿
+    for (const y of [y0 + 0.03, ...GRILL.bars, y1 - 0.03]) add(0.025, 0.025, dz, x, y, zc);              // 側面橫桿
+  }
+  for (const y of [y0, y1]) add(x1 - x0 + 0.06, 0.03, dz, 0, y, zc);                                    // 頂板、底板連到牆
+  const m = new THREE.Mesh(mergeGeometries(geos), IR); m.castShadow = m.receiveShadow = true; scene.add(m);
 }
 // 窗外的鐵皮雨遮（依使用者照片）：從牆面斜斜伸出去，下雨時邊緣滴水
 const AWNING = { z: -1.35, y: 3.05 };
 {
   const [cv, g] = mkCanvas(8, 64);
   for (let x = 0; x < 8; x++){ const v = 150 + Math.round(60*Math.cos(x/8*Math.PI*2)); g.fillStyle = `rgb(${v},${v+4},${v+6})`; g.fillRect(x, 0, 1, 64); }
-  const t = canvasTex(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(70, 1);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 1.15).rotateX(Math.PI/2), std(0xffffff, { map: t, side: THREE.DoubleSide, roughness: 0.55, metalness: 0.4 }));
+  const t = canvasTex(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(36, 1);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(WIN.x1 - WIN.x0 + 1.4, 1.15).rotateX(Math.PI/2), std(0xffffff, { map: t, side: THREE.DoubleSide, roughness: 0.55, metalness: 0.4 }));
   m.position.set(0, RH + 0.12, -WT - 0.55); m.rotation.x = -0.18; m.castShadow = true; scene.add(m);
-  box(7.2, 0.05, 0.05, M.aluDark, 0, RH + 0.02, AWNING.z + 0.08);
-  for (const x of [-3.4, 0, 3.4]){ const s = box(0.04, 0.04, 1.2, M.aluDark, x, RH + 0.05, -WT - 0.55); s.rotation.x = -0.18; }
+  box(WIN.x1 - WIN.x0 + 1.4, 0.05, 0.05, M.aluDark, 0, RH + 0.02, AWNING.z + 0.08);
+  for (const x of [WIN.x0 - 0.65, 0, WIN.x1 + 0.65]){ const s = box(0.04, 0.04, 1.2, M.aluDark, x, RH + 0.05, -WT - 0.55); s.rotation.x = -0.18; }
 }
 
 /* ---------- 窗玻璃：幾乎透明，一點灰塵；下雨時佈滿水珠，有的順著玻璃滑下來 ---------- */
@@ -317,18 +311,18 @@ const glassMat = new THREE.ShaderMaterial({
 });
 {
   const pane = (x0, x1, y0, y1, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(x1-x0, y1-y0), glassMat); m.position.set((x0+x1)/2, (y0+y1)/2, z); m.renderOrder = 2; scene.add(m); return m; };
-  pane(WIN.x0, -1.33, WIN.y0, TRANSOM, FZ); pane(-1.33, 0.04, WIN.y0, TRANSOM, FZ + 0.035); pane(-0.3, 1.06, WIN.y0, TRANSOM, FZ - 0.035); pane(1.35, WIN.x1, WIN.y0, TRANSOM, FZ);
-  pane(WIN.x0, -1.35, TRANSOM, WIN.y1, FZ); pane(0, WIN.x1, TRANSOM, WIN.y1, FZ);
-  const ag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, WIN.y1 - TRANSOM - 0.12), glassMat); ag.position.set(0, -(WIN.y1 - TRANSOM - 0.1)/2, 0); ag.renderOrder = 2; AWN.add(ag);
+  pane(WIN.x0 + 0.05, 0.04, WIN.y0 + 0.05, TRANSOM, FZ + 0.03); pane(-0.04, WIN.x1 - 0.05, WIN.y0 + 0.05, TRANSOM, FZ - 0.03);
+  pane(0, WIN.x1, TRANSOM, WIN.y1, FZ);
+  const ag = new THREE.Mesh(new THREE.PlaneGeometry(-WIN.x0 - 0.12, WIN.y1 - TRANSOM - 0.12), glassMat); ag.position.set(0, -(WIN.y1 - TRANSOM - 0.08)/2, 0); ag.renderOrder = 2; AWN.add(ag);
 }
 
-/* ---------- 窗簾（收在左邊）、窗台上的木雕和盆栽、桌子 ---------- */
+/* ---------- 窗簾（收在左邊）、窗台上的木雕和盆栽（沒有桌子，直接坐在窗前） ---------- */
 {
   // 深咖啡色的布簾，整束收在窗的左邊，打褶
   const cw = 0.95, ch = RH - 0.08 - 0.05, g = new THREE.PlaneGeometry(cw, ch, 48, 16), p = g.attributes.position;
   for (let i = 0; i < p.count; i++){ const x = p.getX(i), y = p.getY(i), hang = (ch/2 - y)/ch; p.setZ(i, Math.sin(x/cw*Math.PI*14) * (0.05 + 0.02*hang) + Math.sin(x*3 + y)*0.01); }
   g.computeVertexNormals();
-  const m = new THREE.Mesh(g, std(0x4b3a2e, { side: THREE.DoubleSide, flatShading: false })); m.position.set(WIN.x0 - 0.25, 0.05 + ch/2, 0.2); m.castShadow = m.receiveShadow = true; scene.add(m);
+  const m = new THREE.Mesh(g, std(0x4b3a2e, { side: THREE.DoubleSide, flatShading: false })); m.position.set(WIN.x0 - 0.6, 0.05 + ch/2, 0.2); m.castShadow = m.receiveShadow = true; scene.add(m);
   box(RX*2 - 0.2, 0.03, 0.03, M.aluDark, 0, RH - 0.06, 0.2);
   // 窗台左邊：一尊細長的木雕（依使用者照片）
   const wd = std(0x4a3426);
@@ -345,17 +339,6 @@ const glassMat = new THREE.ShaderMaterial({
     l.position.set(WIN.x1 - 0.4 + Math.cos(a)*r*(down ? 1.6 : 1), WIN.y0 + (down ? 0.02 + R()*0.1 : 0.16 + R()*0.12), 0.15 + Math.sin(a)*r*(down ? 1.6 : 1));
     l.rotation.set(-0.6 - R()*0.8, a, (R()-0.5)*0.8); l.castShadow = true; scene.add(l);
   }
-  // 桌子：深色木頭桌面，從眼前一路伸到窗台下（依使用者照片）
-  const TZ0 = 0.4, TZ1 = 1.75, TY = 0.745;
-  box(2.6, 0.045, TZ1 - TZ0, M.table, 0.15, TY - 0.0225, (TZ0+TZ1)/2);
-  for (const [x, z] of [[-1.05, TZ0 + 0.08], [1.35, TZ0 + 0.08], [-1.05, TZ1 - 0.08], [1.35, TZ1 - 0.08]]) box(0.05, TY - 0.045, 0.05, M.table, x, (TY - 0.045)/2, z);
-  // 桌上：一個白瓷馬克杯、一本攤開的筆記本和一支筆
-  const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.042, 0.1, 16), std(0xeeece6, { roughness: 0.35, flatShading: false })); mug.position.set(0.78, TY + 0.05, 1.05); mug.castShadow = true; scene.add(mug);
-  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.008, 6, 12, Math.PI), mug.material); handle.position.set(0.825, TY + 0.05, 1.05); handle.rotation.z = -Math.PI/2; scene.add(handle);
-  const tea = new THREE.Mesh(new THREE.CircleGeometry(0.04, 14).rotateX(-Math.PI/2), std(0x6b3f1e, { roughness: 0.2 })); tea.position.set(0.78, TY + 0.088, 1.05); scene.add(tea);
-  const book = box(0.42, 0.012, 0.29, std(0xf1ede2), -0.35, TY + 0.006, 1.2); book.rotation.y = 0.12;
-  const line = box(0.006, 0.013, 0.28, std(0xc9c3b4), -0.35, TY + 0.007, 1.2); line.rotation.y = 0.12;
-  const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.14, 6).rotateZ(Math.PI/2), std(0x2a4a8a)); pen.position.set(-0.05, TY + 0.006, 1.32); pen.rotation.y = -0.5; scene.add(pen);
 }
 
 // 室內只吃到一小部分的半球環境光（天花板和牆擋住了天空）：用一張 1×1 的 aoMap 壓低間接光，窗口面光源照常
@@ -364,6 +347,7 @@ const glassMat = new THREE.ShaderMaterial({
   for (const o of scene.children) if (o.isMesh && o.material && o.material.isMeshStandardMaterial){ o.material.aoMap = ao; o.material.aoMapIntensity = 1; o.material.needsUpdate = true; }
   AWN.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial){ o.material.aoMap = ao; } });
 }
+const STREET_FROM = scene.children.length;   // 從這裡開始是窗外的街景（墨線描邊用）
 /* ---------- 街道 ---------- */
 // 路面、標線、斑馬線、紅線
 {
@@ -436,7 +420,10 @@ function lightBoxTex(){
 }
 const WIRES = [], PERCH_TREE = [], PARKED = [];   // 電線（鳥停的地方）、樹裡讓白頭翁停的點、對面停的機車（貓睡的座墊）
 /* ---------- 對面的街屋：四到七層，一樓騎樓，磁磚外牆、鐵窗、冷氣、陽台晾衣、直立招牌、頂樓水塔和加蓋 ---------- */
-const TILE = ['#cfc8b8', '#bdb6a6', '#d9d4c8', '#a9a8a2', '#c7b8a0', '#b3b9b8', '#d2c3b2', '#9ea7a6', '#c9b49a'];
+// 外牆色：照使用者後來給的街道參考圖（手繪漫畫的老街屋）：米白、薄荷綠、淡青、鮭魚粉、奶油黃，帶鏽水和雨痕
+const TILE = ['#e9e0c8', '#d6e2cf', '#c6ddd5', '#ecc9b9', '#f0e2b4', '#ddd6c4', '#b9d5cc', '#e7d3c0', '#cfe0dc'];
+const INK_CSS = '#2b2622';
+const INKBOX = [];
 function facadeTex(floors, bays, base){
   const S = 32, [cv, g] = mkCanvas(bays*S, floors*S), [ce, e] = mkCanvas(bays*S, floors*S);
   g.fillStyle = base; g.fillRect(0, 0, cv.width, cv.height);
@@ -451,7 +438,7 @@ function facadeTex(floors, bays, base){
       if (r < 0.62){
         // 窗戶加鐵窗
         const wx = x + 5, wy = y + 8, ww = 22, wh = 16;
-        g.fillStyle = pick(['#46535c', '#55646c', '#3d464c', '#6c7a80']); g.fillRect(wx, wy, ww, wh);
+        g.fillStyle = pick(['#46535c', '#55646c', '#3d464c', '#6c7a80']); g.fillRect(wx, wy, ww, wh); INKBOX.push([wx - 2, wy - 2, ww + 4, wh + 4]);
         g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(wx, wy, ww, 3);
         g.fillStyle = '#c9cbc6'; g.fillRect(wx + ww/2 - 0.5, wy, 1, wh);
         if (R() < 0.6){ const lit = R() < 0.42; if (lit){ e.fillStyle = pick(['#ffcf8a', '#ffe2b0', '#dfe8ff', '#fff2d8']); e.globalAlpha = 0.5 + R()*0.5; e.fillRect(wx, wy, ww, wh); e.globalAlpha = 1; } }
@@ -465,7 +452,7 @@ function facadeTex(floors, bays, base){
         if (R() < 0.45){ const ax = R() < 0.5 ? x + 1 : x + S - 9; g.fillStyle = '#e6e6e0'; g.fillRect(ax, y + 22, 8, 6); g.fillStyle = '#9c9c98'; for (let k = 0; k < 3; k++) g.fillRect(ax + 1, y + 23 + k*2, 6, 1); }   // 冷氣
       } else if (r < 0.88){
         // 陽台：欄板、後面暗暗的落地窗、盆栽和晾的衣服
-        g.fillStyle = '#2f3438'; g.fillRect(x + 2, y + 6, S - 4, 20);
+        g.fillStyle = '#2f3438'; g.fillRect(x + 2, y + 6, S - 4, 20); INKBOX.push([x + 1, y + 5, S - 2, 26]);
         if (R() < 0.4){ e.fillStyle = '#ffd9a0'; e.globalAlpha = 0.6; e.fillRect(x + 4, y + 8, S - 8, 16); e.globalAlpha = 1; }
         for (let k = 0; k < 5; k++){ if (R() < 0.6){ g.fillStyle = pick(['#d64a3a', '#3a6ad6', '#f2f2ea', '#e8c23a', '#5aa070', '#e88aa0']); g.fillRect(x + 4 + k*5, y + 9, 3, 6 + Math.floor(R()*4)); } }
         g.fillStyle = base; g.fillRect(x + 1, y + 21, S - 2, 9); g.fillStyle = 'rgba(0,0,0,.15)'; g.fillRect(x + 1, y + 21, S - 2, 1);
@@ -475,6 +462,20 @@ function facadeTex(floors, bays, base){
       }
     }
   }
+  // 手繪感：鏽水和雨痕從窗台、樓板往下流；窗、陽台、樓板描一圈深色墨線
+  for (let f = 0; f < floors; f++) for (let b = 0; b < bays; b++){
+    const n = 1 + Math.floor(R()*3);
+    for (let k = 0; k < n; k++){
+      const x = b*S + 3 + Math.floor(R()*(S - 6)), y = f*S + 24 + Math.floor(R()*6), len = 6 + Math.floor(R()*26);
+      const gr = g.createLinearGradient(0, y, 0, y + len); const rc = R() < 0.6 ? '120,70,35' : '60,60,55';
+      gr.addColorStop(0, `rgba(${rc},.38)`); gr.addColorStop(1, `rgba(${rc},0)`);
+      g.fillStyle = gr; g.fillRect(x, y, 1 + Math.floor(R()*2), len);
+    }
+  }
+  g.strokeStyle = INK_CSS; g.lineWidth = 1; g.globalAlpha = 0.85;
+  for (let f = 0; f < floors; f++){ g.beginPath(); g.moveTo(0, f*S + S - 0.5); g.lineTo(cv.width, f*S + S - 0.5); g.stroke(); }
+  for (const [x, y, w, h] of INKBOX) g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  g.globalAlpha = 1; INKBOX.length = 0;
   const map = canvasTex(cv), emissiveMap = canvasTex(ce);
   return { map, emissiveMap };
 }
@@ -489,6 +490,7 @@ function shopTex(bays){
     g.fillStyle = sc === '#f2f0ea' || sc === '#f2c21b' ? '#3a2a1a' : '#f6f2e6';
     for (let k = 0; k < 4; k++) g.fillRect(x + 4 + k*6, 2, 4, 3);                            // 招牌上的字
     e.fillStyle = sc; e.globalAlpha = 0.8; e.fillRect(x, 0, S, 7); e.globalAlpha = 1;
+    g.strokeStyle = INK_CSS; g.strokeRect(x + 0.5, 0.5, S - 1, 7); g.strokeRect(x + 2.5, 8.5, S - 5, 23);
     if (r < 0.3){ g.fillStyle = '#9a9c9a'; g.fillRect(x + 2, 8, S - 4, 24); g.fillStyle = '#8a8c8a'; for (let k = 9; k < 32; k += 2) g.fillRect(x + 2, k, S - 4, 1); }   // 拉下的鐵捲門
     else {
       g.fillStyle = '#3a3e40'; g.fillRect(x + 2, 8, S - 4, 24);
@@ -537,6 +539,27 @@ function building(x0, x1, zFront, depth, floors, face = 'pz'){
   const top = GROUND + H, tc = new THREE.Vector3(face === 'pz' ? cx : zFront - (face === 'px' ? 1 : -1)*depth*0.6, top, face === 'pz' ? zFront - depth*0.55 : cx);
   if (R() < 0.8){ const t = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.5, 12), M.steel); t.position.set(tc.x + (R()-0.5)*w*0.4, top + 1.3, tc.z); t.castShadow = true; scene.add(t); box(1.6, 0.6, 1.6, M.dark, t.position.x, top + 0.3, t.position.z); }
   if (R() < 0.55){ const tin = std(pick([0x5b7fa0, 0x6f9a7a, 0xa4a6a0, 0x8a5a4a])); const hw = Math.min(w*0.7, 7); const b = box(face === 'pz' ? hw : 5, 2.6, face === 'pz' ? 5 : hw, tin, tc.x, top + 1.3, tc.z); }
+  // 頂樓雜物（照參考圖）：天線、晾衣架和衣服、盆栽、堆著的東西
+  if (face === 'pz'){
+    const zr = zFront - 1.2 - R()*2;
+    for (let i = 0, n = 1 + Math.floor(R()*2); i < n; i++){   // 電視天線
+      const ax = x0 + 1 + R()*(w - 2), ah = 1.8 + R()*1.6;
+      dbox(0.05, ah, 0.05, ax, top + ah/2, zr - R()*3, 0x6a6a66);
+      for (let k = 0; k < 3; k++) dbox(0.9 - k*0.2, 0.03, 0.03, ax, top + ah - 0.15 - k*0.25, zr - 1, 0x6a6a66);
+    }
+    if (R() < 0.7){   // 晾衣架：兩根柱子一條線，掛幾件衣服和床單
+      const lx0 = x0 + 0.8 + R()*Math.max(0.5, w*0.3), lx1 = Math.min(x1 - 0.6, lx0 + 2.4 + R()*2.4), lz = zFront - 0.8;
+      for (const lx of [lx0, lx1]) dbox(0.05, 1.7, 0.05, lx, top + 0.85, lz, 0x8a8a84);
+      dbox(lx1 - lx0, 0.015, 0.015, (lx0 + lx1)/2, top + 1.68, lz, 0x8a8a84);
+      for (let cx = lx0 + 0.3; cx < lx1 - 0.25; cx += 0.45 + R()*0.5){
+        const big = R() < 0.3, cw = big ? 0.9 : 0.35 + R()*0.2, ch = big ? 1.1 : 0.45 + R()*0.3;
+        dbox(cw, ch, 0.02, cx + cw/2 - 0.15, top + 1.68 - ch/2, lz, pick([0xd9c86a, 0x9a7ac0, 0x6aa0d0, 0xe8e4da, 0xd26a5a, 0x7ab08a, 0xf0b0b8]));
+        if (big) cx += cw;
+      }
+    }
+    for (let i = 0, n = Math.floor(R()*5); i < n; i++){ const px = x0 + 0.4 + R()*(w - 0.8); dbox(0.35, 0.3, 0.35, px, top + 0.15, zFront - 0.4, pick([0xb7643f, 0x6a8aa0, 0xe0dcd0])); dbox(0.45, 0.35, 0.45, px, top + 0.45, zFront - 0.4, pick([0x4f8a3a, 0x3a6a2a, 0x6aa04a])); }
+    dbox(w, 0.9, 0.12, cx, top + 0.45, zFront - 0.06, pick([0xd6e2cf, 0xe9e0c8, 0xc6ddd5, 0xecc9b9]));   // 女兒牆
+  }
   // 直立招牌：從騎樓上方的立面伸出來
   if (R() < 0.75){
     const n = 1 + Math.floor(R()*2);
@@ -745,7 +768,7 @@ function tree(o){
   const { x, z, type } = o, base = new THREE.Vector3(x, GROUND, z);
   const fork = new THREE.Vector3(x + (o.lean || 0)*0.4, GROUND + o.trunkH, z);
   const bark = type === 'banyan' ? M.barkGrey : M.bark;
-  limb(BARK, base, fork, o.trunkR, o.trunkR*0.75, 8);
+  limb(BARK, base, fork, o.trunkR, o.trunkR*0.75, 16);
   const cols = (PAL[type] || PAL.tall).map(c => new THREE.Color(c));
   const nClump = o.clumps || 7;
   const cc = new THREE.Vector3(x + (o.lean || 0), GROUND + o.crownY, z);
@@ -754,7 +777,7 @@ function tree(o){
     const c = new THREE.Vector3(Math.sin(v)*Math.cos(u)*o.rx*0.62, Math.cos(v)*o.ry*0.5, Math.sin(v)*Math.sin(u)*o.rz*0.62).add(cc);
     if (type === 'dome') c.y = Math.max(c.y, cc.y - o.ry*0.1);
     const mid = fork.clone().lerp(c, 0.5); mid.y += 0.3;
-    limb(BARK, fork, mid, o.trunkR*0.45, o.trunkR*0.26, 6); limb(BARK, mid, c, o.trunkR*0.26, o.trunkR*0.07, 5);
+    limb(BARK, fork, mid, o.trunkR*0.45, o.trunkR*0.26, 12); limb(BARK, mid, c, o.trunkR*0.26, o.trunkR*0.07, 9);
     const n = Math.floor(o.n / nClump), cr = o.clumpR * (0.75 + R()*0.5);
     if (o.near && c.x > -4 && c.x < 8) PERCH_TREE.push(new THREE.Vector3(c.x + (R()-0.5)*cr, c.y - cr*0.55, Math.min(c.z + cr*0.55, -1.25)));
     for (let k = 0; k < n; k++){
@@ -825,6 +848,8 @@ const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, LEAVES.length);
   leafMesh.instanceMatrix.needsUpdate = true; leafMesh.instanceColor.needsUpdate = true;
 }
 leafMesh.castShadow = leafMesh.receiveShadow = true; leafMesh.frustumCulled = false; leafMesh.customDepthMaterial = leafDepth; scene.add(leafMesh);
+// 樹幹：圓滑著色、細一點的樹皮色（使用者覺得原本太粗糙）
+for (const m of [M.bark, M.barkGrey, M.root]){ m.flatShading = false; m.roughness = 0.85; m.needsUpdate = true; }
 { const b = new THREE.Mesh(mergeGeometries(BARK), M.bark); b.castShadow = b.receiveShadow = true; scene.add(b);
   const r = new THREE.Mesh(mergeGeometries(ROOTS), M.root); r.castShadow = true; scene.add(r); }
 
@@ -937,12 +962,10 @@ function makeGarbageTruck(){
   for (const z of [0.8, -0.8]){ const h = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.18, 0.3), headM); h.position.set(3.52, 0.8, z); g.add(h); }
   return { g, len: 7.6, kind: 'truck' };
 }
-// 車道：近側往 +x（右駕靠右）、遠側往 -x。每條車道一串車，跟車、遇紅燈停在停止線前
+// 車道：近側往 +x（右駕靠右）、遠側往 -x。使用者不要畫面裡有人，所以路上只開汽車（看不到駕駛），不開有騎士的機車。每條車道一串車，跟車、遇紅燈停在停止線前
 const LANES = [
   { z: LANE.nearCar, dir: 1, kind: 'car', stop: ZEBRA.x0 - 1.2, list: [] },
-  { z: LANE.nearScoot, dir: 1, kind: 'scooter', stop: ZEBRA.x0 - 1.2, list: [] },
   { z: LANE.farCar, dir: -1, kind: 'car', stop: XST.r1 + 1.0, list: [] },
-  { z: LANE.farScoot, dir: -1, kind: 'scooter', stop: XST.r1 + 1.0, list: [] },
 ];
 const POOL = { car: [], scooter: [] };
 for (let i = 0; i < 16; i++){ const v = makeCar(CAR_COLS[i % CAR_COLS.length]); v.g.visible = false; scene.add(v.g); POOL.car.push(v); }
@@ -1158,6 +1181,21 @@ const EGRET = { b: null, active: false, next: 60 + R()*90 };
 
 { const m = new THREE.Mesh(mergeGeometries(DETAIL), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true })); m.castShadow = m.receiveShadow = true; scene.add(m);
   const am = glowMat(null, null, 1.6, { color: 0xdedcd4 }); am.emissive.set(0xfff2dc); scene.add(new THREE.Mesh(mergeGeometries(ARC_G), am)); }
+// 街景的墨線（照使用者後來給的街道參考圖：手繪漫畫的線稿＋淡彩）：街屋、騎樓、頂樓雜物、街道家具、電線桿、車子都描深色輪廓；行道樹、天空、遠山不描
+{
+  const INK = new THREE.LineBasicMaterial({ color: 0x2b2622 });
+  const skipM = new Set([M.bark, M.barkGrey, M.root, HILL]);
+  const list = [];
+  for (const top of scene.children.slice(STREET_FROM)) top.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || !o.geometry) return;
+    if ([].concat(o.material).some(m => m.isShaderMaterial || skipM.has(m))) return;
+    list.push(o);
+  });
+  for (const o of list){
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 32), INK); e.raycast = () => {}; o.add(e);
+    for (const m of [].concat(o.material)){ m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1; }
+  }
+}
 /* ---------- 光 ---------- */
 const sun = new THREE.DirectionalLight(0xfff0d8, 3);
 sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
@@ -1977,14 +2015,14 @@ function frame(now){
   look.yaw += (look.yawT - look.yaw)*lk; look.pitch += (look.pitchT - look.pitch)*lk;
   const lean = ss(-look.pitch, 0.12, 0.7);
   const br = Math.sin(t*Math.PI*2/5);
-  camera.position.set(EYE.x - Math.sin(look.yaw)*0.3*lean, EYE.y + 0.3*lean + br*0.004, EYE.z - 1.55*lean);
+  camera.position.set(EYE.x - Math.sin(look.yaw)*0.25*lean, EYE.y + 0.25*lean + br*0.004, EYE.z - 1.3*lean);
   camera.rotation.set(look.pitch + br*0.002, look.yaw, 0);
   camera.updateMatrixWorld();
 
   if (audio && !st.muted) audioFrame(t, dt, ACTIVE);
 
   renderer.setRenderTarget(rt); renderer.render(scene, camera);
-  post.uniforms.uInvProj.value.copy(camera.projectionMatrixInverse); post.uniforms.uPS.value.set(camera.projectionMatrix.elements[0], camera.projectionMatrix.elements[5]);
+  camera.updateMatrixWorld(); post.uniforms.uViewInv.value.copy(camera.matrixWorld); post.uniforms.uInvProj.value.copy(camera.projectionMatrixInverse); post.uniforms.uPS.value.set(camera.projectionMatrix.elements[0], camera.projectionMatrix.elements[5]);
   renderer.setRenderTarget(null); renderer.render(postScene, postCam);
   requestAnimationFrame(frame);
 }
