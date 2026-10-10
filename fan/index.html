@@ -258,25 +258,21 @@ function updateCurtains(t, wind){
     c.g.attributes.position.needsUpdate = true; c.g.computeVertexNormals();
   }
 }
-// 溢光：貼在窗洞周圍牆面上的一圈暖光，被窗簾擋住的地方看不到，只從邊緣和鼓起的縫隙漏出來
+// 窗外的光：一片很亮的暖白光幕放在窗外（鐵窗與樹葉後面），從室內看窗框、鐵窗、樹葉都是逆光的剪影；窗簾的縫隙也透出這片光
 const glowMat = new THREE.ShaderMaterial({
   uniforms:{ uI:{ value: 1 } },
-  vertexShader:`varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  vertexShader:`varying vec2 vP; void main(){ vP = position.zy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
   fragmentShader:`
-    uniform float uI; varying vec3 vW;
+    uniform float uI; varying vec2 vP;
     void main(){
-      vec2 q = vec2(vW.z, vW.y), lo = vec2(${WIN.z0.toFixed(3)}, ${WIN.y0.toFixed(3)}), hi = vec2(${WIN.z1.toFixed(3)}, ${WIN.y1.toFixed(3)});
-      vec2 d2 = max(lo - q, q - hi); float d = length(max(d2, 0.)) + min(max(d2.x, d2.y), 0.);
-      float a = d < 0. ? 0.9 : exp(-d / 0.16) * 0.75 + exp(-d / 0.5) * 0.2;
-      gl_FragColor = vec4(vec3(1.0, 0.82, 0.5) * a * uI, 1.);
+      float a = exp(-dot(vP, vP) / 9.) * 1.1;   // 中間最亮，往外慢慢淡
+      gl_FragColor = vec4(vec3(1.0, 0.9, 0.72) * a * uI, 1.);
     }`,
   transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
 });
 {
-  const g = new THREE.PlaneGeometry(WIN.z1 - WIN.z0 + 2.2, WIN.y1 - WIN.y0 + 1.6).rotateY(Math.PI/2);
-  const m = new THREE.Mesh(g, glowMat); m.position.set(WX + 0.006, (WIN.y0 + WIN.y1)/2, WM); m.renderOrder = 1; scene.add(m);
-  // 窗洞四周的牆面厚度（窗台、窗框側邊）也被照亮
-  const r = new THREE.Mesh(new THREE.PlaneGeometry(WIN.z1 - WIN.z0, T).rotateX(-Math.PI/2), glowMat); r.position.set(WX - T/2, WIN.y0 + 0.002, WM); r.rotation.z = 0; scene.add(r);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(14, 10).rotateY(Math.PI/2), glowMat);
+  m.position.set(-4.6, (WIN.y0 + WIN.y1)/2 + 0.4, WM); m.renderOrder = 1; scene.add(m);
 }
 
 
