@@ -773,6 +773,13 @@ for (const side of [-1, 1]) for (let z = ROAD1 - 6; z > -150; z -= 8 + R()*2){
   tree({ type:'tall', x, z, trunkH:3.6, trunkR:0.22, crownY:8.4 + R()*1.5, rx:4.2, ry:3.0, rz:3.4, clumps:6, clumpR:2.0, n:z > -60 ? 900 : 520, leaf: z > -60 ? 0.42 : 0.6, lean: -side*1.7 });
 }
 for (const x of [-1.3, 0.3, 1.7]) PERCH_TREE.push(new THREE.Vector3(x, RH + 0.09, AWNING.z + 0.08));   // 雨遮邊上
+// 樹冠中間修出一個空隙，從窗前看得到對街和遠方飛過的鳥（邊緣隨機，不是一個整齊的洞）
+for (let i = LEAVES.length - 1; i >= 0; i--){
+  const L = LEAVES[i]; if (L[2] < -17) continue;
+  const dx = L[0] - EYE.x, dz = EYE.z - L[2], yaw = Math.atan2(dx, dz), pit = Math.atan2(L[1] - EYE.y, Math.hypot(dx, dz));
+  const e = ((yaw - 0.1)/0.3)**2 + ((pit - 0.22)/0.15)**2;
+  if (e < 0.75 + R()*0.6) LEAVES.splice(i, 1);
+}
 const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, LEAVES.length);
 {
   const P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler(), C = new THREE.Color(), MM = new THREE.Matrix4();
@@ -1651,11 +1658,56 @@ function assignSlots(){
 for (let i = 0; i < 16; i++) FLOCK.birds.push(makeBird('sparrow'));
 assignSlots();
 for (const b of FLOCK.birds){ wirePoint(b.wire, b.u, b.p); b.p.y += 0.04; b.state = 'perched'; b.act = R()*5; }
-function startleBirds(){ if (FLOCK.state === 'perched' && SKY.night < 0.7){ FLOCK.state = 'flying'; FLOCK.timer = 8 + R()*14; for (const b of FLOCK.birds){ b.state = 'fly'; b.v.set((R()-0.5)*3, 3 + R()*2, (R()-0.5)*3); } sfxFlutter(FLOCK.birds[0].p, 10); } }
+function startleBirds(){ if (FLOCK.state === 'perched__' && SKY.night < 0.7){ FLOCK.state = 'flying'; FLOCK.timer = 8 + R()*14; for (const b of FLOCK.birds){ b.state = 'fly'; b.v.set((R()-0.5)*3, 3 + R()*2, (R()-0.5)*3); } sfxFlutter(FLOCK.birds[0].p, 10); } }
 for (let i = 0; i < 7; i++){ const b = makeBird('pigeon'); b.p.set(-9 + R()*6, GROUND + 0.15, -13.5 - R()*1.2); b.state = 'ground'; b.yaw = R()*6; b.tx = b.p.x; b.tz = b.p.z; b.act = R()*3; PIGEONS.push(b); }
 for (let i = 0; i < 3; i++){ const b = makeBird('bulbul'); const pp = pick(PERCH_TREE); b.p.copy(pp); b.state = 'perch'; b.act = 1 + R()*4; b.yaw = R()*6; BULBULS.push(b); }
 for (let i = 0; i < 4; i++){ const b = makeBird('swallow'); b.p.set((R()-0.5)*30, GROUND + 6 + R()*6, -6 - R()*10); b.v.set(8, 0, 0); b.tgt = b.p.clone(); SWALLOWS.push(b); }
 EGRET.b = makeBird('egret'); EGRET.b.g.visible = false;
+// 2026-10-10 使用者改：街上不要人和動物，只留遠方飛鳥。上面的定義留著不用，這裡把它們從場景拿掉
+{ const off = [...PEDS.map(h => h.g), ...STATICS.map(s => s.h.g), ...DOGS.map(d => d.g), CAT.g, WALKER.g, leash, ...PIGEONS.map(b => b.g), ...BULBULS.map(b => b.g)];
+  for (const o of off){ o.visible = false; scene.remove(o); } }
+// 遠方的鳥群：在對街屋前、樹梢之間的空中來回盤旋（從葉縫和巷口看得到），拍幾下、滑一下，忽聚忽散
+FLOCK.state = 'far';
+for (const b of FLOCK.birds){ b.g.scale.setScalar(3); b.state = 'fly'; b.p.set((R()-0.5)*8, GROUND + 7 + R()*2, -15 + (R()-0.5)*4); b.v.set(5, 0, 0); }
+for (const b of SWALLOWS){ b.g.scale.setScalar(2.4); b.p.set((R()-0.5)*50, GROUND + 5 + R()*3, -12 - R()*8); b.tgt = b.p.clone(); }
+function updateFarBirds(t, dt){
+  const night = SKY.night, rain = st.rain, day = night < 0.5;
+  FLOCK.tt += dt;
+  const vis = night < 0.65 && rain < 0.6;
+  const C = _v1.set(4 + 26*Math.sin(FLOCK.tt*0.07), GROUND + 7.2 + 1.6*Math.sin(FLOCK.tt*0.11), -15 + 3*Math.sin(FLOCK.tt*0.09 + 1));
+  const spread = 1 + 0.8*Math.max(0, Math.sin(FLOCK.tt*0.13));   // 鳥群一下收緊一下散開
+  for (const b of FLOCK.birds){
+    b.g.visible = vis;
+    const acc = _v2.copy(C).sub(b.p).multiplyScalar(0.45);
+    let n = 0; _v3.set(0, 0, 0);
+    for (const o of FLOCK.birds){ if (o === b) continue; const d2 = b.p.distanceToSquared(o.p); if (d2 < 4*spread){ acc.addScaledVector(_lA.copy(b.p).sub(o.p), 2.2*spread/(d2 + 0.1)); } if (d2 < 36){ _v3.add(o.v); n++; } }
+    if (n) acc.addScaledVector(_v3.multiplyScalar(1/n).sub(b.v), 0.8);
+    acc.x += Math.sin(t*1.3 + b.seed)*1.5; acc.y += Math.sin(t*1.1 + b.seed*2)*1.2;
+    b.v.addScaledVector(acc, dt);
+    const sp = b.v.length(); if (sp > 10) b.v.multiplyScalar(10/sp); if (sp < 6) b.v.multiplyScalar(6/sp);
+    b.p.addScaledVector(b.v, dt);
+    faceVel(b, dt*6);
+    const burst = Math.sin(t*2.2 + b.seed) > -0.3;
+    poseBird(b, t, dt, burst ? 1 : 0, burst ? 0 : 0.6);
+  }
+  for (const b of SWALLOWS){
+    b.g.visible = day && rain < 0.3;
+    if (!b.g.visible) continue;
+    if (b.p.distanceTo(b.tgt) < 3 || R() < dt*0.25) b.tgt.set((R()-0.5)*60, GROUND + 4.5 + R()*4, -11 - R()*9);
+    const want = _v2.copy(b.tgt).sub(b.p).normalize().multiplyScalar(11);
+    b.v.lerp(want, Math.min(1, dt*1.5)); b.p.addScaledVector(b.v, dt);
+    faceVel(b, dt*8);
+    const glide = Math.sin(t*1.7 + b.seed) > 0.3;
+    poseBird(b, t, dt, glide ? 0 : 1, glide ? 0.35 : 0);
+  }
+  const E = EGRET;
+  if (!E.active && t > E.next && day && rain < 0.3){ E.active = true; const dir = R() < 0.5 ? 1 : -1; E.b.p.set(-170*dir, GROUND + 26 + R()*10, -40 - R()*30); E.b.v.set(6.5*dir, 0, 0); E.b.g.visible = true; }
+  if (E.active){
+    const b = E.b; b.p.addScaledVector(b.v, dt); b.p.y += Math.sin(t*0.4)*0.02; faceVel(b, 1);
+    const flap = (t % 5) < 3; poseBird(b, t, dt, flap ? 1 : 0, 0);
+    if (Math.abs(b.p.x) > 175){ E.active = false; b.g.visible = false; E.next = t + 120 + R()*180; }
+  }
+}
 function updateBirds(t, dt){
   const night = SKY.night, rain = st.rain, day = night < 0.5;
   // 麻雀群
@@ -1870,9 +1922,7 @@ function frame(now){
   post.uniforms.uExp.value = 1.15 + 0.1*night;
 
   updateTraffic(t, dt);
-  updatePeds(t, dt);
-  updateDogs(t, dt);
-  updateBirds(t, dt);
+  updateFarBirds(t, dt);
 
   // 鏡頭：只轉頭；往下看時上身往窗邊湊，額頭快貼到玻璃。閒置 25 秒慢慢轉回來
   const kx = (keys.has('arrowleft')||keys.has('a') ? 1 : 0) - (keys.has('arrowright')||keys.has('d') ? 1 : 0);
