@@ -766,20 +766,22 @@ const ACT = {
   ui(){ setUI(!st.uiOn); },
 };
 const keys = new Set();
+// 用實體按鍵判斷：Mac 開著注音／中文輸入法時 e.key 會變成 'Process'，大小寫也不影響
+const keyOf = e => /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : /^Digit\d$/.test(e.code) ? e.code.slice(5) : e.key.toLowerCase();
 addEventListener('keydown', e => {
   // F：切換全螢幕（2026-10-10 使用者要求）；Cmd/Ctrl+F 留給瀏覽器搜尋
-  if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat){
+  if (keyOf(e) === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat){
     const d = document, el = d.documentElement;
     if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
     else { const req = el.requestFullscreen || el.webkitRequestFullscreen; if (req) { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } }
     return;
   }
   if (!st.started) return;
-  const k = e.key.toLowerCase();
+  const k = keyOf(e);
   if (KEYMAP[k]) { ACT[KEYMAP[k]](); return; }
   if (['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'].includes(k)){ keys.add(k); e.preventDefault(); }
 });
-addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+addEventListener('keyup', e => keys.delete(keyOf(e)));
 const hudEl = document.getElementById('hud'), uiBtn = document.getElementById('uiBtn');
 function setUI(on){ st.uiOn = on; hudEl.hidden = !on; uiBtn.textContent = on ? 'Hide UI' : 'Show UI'; uiBtn.setAttribute('aria-pressed', String(!on)); }
 uiBtn.addEventListener('click', () => ACT.ui());
