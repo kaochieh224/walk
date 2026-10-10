@@ -862,7 +862,7 @@ function updateGyro(dt){
   const kb = 1 - Math.exp(-dt/20);
   gyro.base.x = wrap180(gyro.base.x + gyro.rx*kb); gyro.base.y = wrap180(gyro.base.y + gyro.ry*kb);
   gyro.rx *= 1 - kb; gyro.ry *= 1 - kb;
-  gyro.ty = -THREE.MathUtils.degToRad(gyro.rx) * 1.4;  // 往右傾 → 往右轉
+  gyro.ty = THREE.MathUtils.degToRad(gyro.rx) * 1.4;   // 方向依使用者 2026-10-10 實測對調
   gyro.tp = THREE.MathUtils.degToRad(gyro.ry) * 1.0;   // 上緣往外傾 → 往頭頂那頭看
   // 很慢地跟上：時間常數約 1.4 秒
   const k = 1 - Math.exp(-dt/1.4);
