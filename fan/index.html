@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>A slow afternoon</title>
+<meta property="og:title" content="A slow afternoon">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+/* 介面：與〈An endless coast〉同一套。Instrument Serif（正體＋斜體），字一律白色，細線分隔，不加卡片 */
+:root{
+  --ink:#19150c;
+  --ui:#ffffff;
+  --ui-dim:rgba(255,255,255,.62);
+  --rule:rgba(255,255,255,.45);
+  --serif:"Instrument Serif","Times New Roman",serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(--ui);font-family:var(--serif)}
+#c{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);image-rendering:pixelated;image-rendering:crisp-edges;display:block;touch-action:none;cursor:grab}
+#c:active{cursor:grabbing}
+.hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding-inline:28px;text-shadow:0 1px 12px rgba(0,0,0,.35)}
+.hud.bottom{bottom:0;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+.dist{display:flex;flex-direction:column;gap:6px}
+.dist .num{font-size:56px;line-height:.9;font-style:italic;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.dist .num em{font-size:24px;margin-left:6px;font-style:italic;color:var(--ui-dim)}
+.dist small{font-size:13px;letter-spacing:.24em;color:var(--ui-dim);border-top:1px solid var(--rule);padding-top:6px;min-width:150px}
+.keys{display:flex;flex-direction:column;align-items:stretch;gap:2px;font-size:16px;line-height:1.35}
+.keys .row,button.k{display:grid;grid-template-columns:4em 1fr;column-gap:14px;align-items:center;text-align:left}
+.keys b{font-weight:400;letter-spacing:.14em;font-size:12px;text-align:right;color:var(--ui-dim)}
+.keys i{font-style:italic}
+.keys .off{color:var(--ui-dim)}
+button.k{pointer-events:auto;font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;text-shadow:inherit}
+button.k:hover i{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+button.k:focus-visible{outline:1px solid var(--ui);outline-offset:2px}
+#uiBtn{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:calc(20px + env(safe-area-inset-right,0px));font:inherit;font-style:italic;font-size:16px;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--rule);padding:6px 0 3px;cursor:pointer;text-shadow:0 1px 12px rgba(0,0,0,.35);opacity:.85;-webkit-tap-highlight-color:transparent}
+#uiBtn:hover{opacity:1}
+#uiBtn:focus-visible{outline:1px solid var(--ui);outline-offset:4px}
+#intro{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;padding:0 28px calc(56px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(10,9,6,.78),rgba(10,9,6,.25) 50%,rgba(10,9,6,0) 75%);transition:opacity 1.6s}
+#intro.gone{opacity:0;pointer-events:none}
+#intro h1{margin:0;font-weight:400;font-style:italic;font-size:clamp(56px,10vw,150px);line-height:.9;letter-spacing:-.02em}
+#intro .rule{width:min(520px,80vw);height:1px;background:var(--rule);margin:24px 0 20px}
+#start{font:inherit;font-size:22px;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--ui);padding:0 0 4px;cursor:pointer;letter-spacing:.02em}
+#start span{display:inline-block;transition:transform .3s}
+#start:hover span{transform:translateX(6px)}
+#start:focus-visible{outline:1px solid var(--ui);outline-offset:6px}
+@media (max-width:560px){.dist .num{font-size:40px}.dist small{min-width:0}.hud{padding-inline:16px;gap:12px}#intro{padding-inline:16px}.keys{font-size:15px;row-gap:0}#uiBtn{right:calc(16px + env(safe-area-inset-right,0px))}}
+@media (hover:none){.keys{gap:8px;font-size:19px;align-items:flex-end}.keys .row,.keys b{display:none}button.k{display:flex;justify-content:center;min-width:132px;min-height:46px;padding:0 18px;box-sizing:border-box;border:1px solid var(--rule);background:rgba(10,9,6,.28)}button.k:active{background:rgba(255,255,255,.18)}#uiBtn{font-size:18px;min-height:44px;padding:0 16px;border:1px solid var(--rule);background:rgba(10,9,6,.28);touch-action:manipulation}}
+@media (prefers-reduced-motion:reduce){#intro{transition:none}#start span{transition:none}}
+</style>
+
+<canvas id="c" aria-label="Lying in bed, looking up at a ceiling fan"></canvas>
+<div class="hud bottom" id="hud" hidden>
+  <div class="dist"><div class="num"><span id="clock">2:00</span><em>pm</em></div><small id="fanLbl">FAN · 2</small></div>
+  <div class="keys" id="keys"></div>
+</div>
+<button id="uiBtn" type="button" hidden>Hide UI</button>
+<div id="intro">
+  <h1>A slow afternoon</h1>
+  <div class="rule"></div>
+  <button id="start" type="button">Lie down <span>&rarr;</span></button>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ---------- 參數：色盤與〈An endless coast〉相同 ---------- */
+const PALS = [
+  { en:'DUSK',    pal:['#19150c','#3c3e2d','#57473f','#63648c','#7c99e4'], accent:'#6f6d45' },
+  { en:'RAIN',    pal:['#0e181e','#1b2b34','#2e434d','#52656c','#8aa2aa'], accent:'#7a6238' },
+  { en:'NIGHT',   pal:['#14141f','#2a2d44','#3b3d70','#5557b8','#8285f0'], accent:'#66664a' },
+  { en:'STALKER', pal:['#161a15','#363d33','#5f6a5c','#97a28f','#cfd6c4'], accent:'#6e6844' },
+];
+const toVec = h => { const c = new THREE.Color(); c.setStyle(h, THREE.LinearSRGBColorSpace); return new THREE.Vector3(c.r, c.g, c.b); };
+const BASE_H = 540;   // 內部解析度與海岸相同：以長邊換算，點陣顆粒一樣大
+
+// 房間（公尺）：寬 3.6（x）、長 4.5（z）、高 3.0。躺在床上，頭朝 +z，腳朝 -z
+const RX = 1.8, RZ0 = -2.3, RZ1 = 2.2, RH = 3.0;
+const WX = -RX;                                   // 窗在左牆
+const WIN = { z0:-1.6, z1:0.4, y0:0.95, y1:2.45 };  // 窗洞
+const EYE = new THREE.Vector3(0.22, 0.84, 1.4);    // 躺著的眼睛位置
+const FAN = new THREE.Vector3(-0.05, 0, -0.25);     // 吊扇在天花板上的位置
+const HOME = { yaw: 0.06, pitch: 0.92 };            // 預設看向吊扇（直式螢幕在 resize 裡改成偏向窗）
+
+/* ---------- 共用噪聲 ---------- */
+function hash2(x,y){ let h = Math.imul(x|0, 374761393) + Math.imul(y|0, 668265263); h = Math.imul(h ^ (h>>>13), 1274126177); return ((h ^ (h>>>16)) >>> 0) / 4294967296; }
+function vn(x,y){ const ix=Math.floor(x), iy=Math.floor(y); let fx=x-ix, fy=y-iy; fx=fx*fx*(3-2*fx); fy=fy*fy*(3-2*fy);
+  const a=hash2(ix,iy), b=hash2(ix+1,iy), c=hash2(ix,iy+1), d=hash2(ix+1,iy+1);
+  return (a+(b-a)*fx) + ((c+(d-c)*fx) - (a+(b-a)*fx))*fy; }
+function mulberry(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed); t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14) >>> 0) / 4294967296; }; }
+const R = mulberry(20261010);
+
+/* ---------- 渲染器：低解析 render target → 調色盤網點（與海岸同一條管線） ---------- */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:false, powerPreference:'high-performance' });
+renderer.setPixelRatio(1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.BasicShadowMap;   // 硬邊陰影
+const rt = new THREE.WebGLRenderTarget(4, 4, { minFilter:THREE.NearestFilter, magFilter:THREE.NearestFilter, type:THREE.HalfFloatType });
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0.5, 0.5, 0.5);
+const camera = new THREE.PerspectiveCamera(56, 1, 0.03, 60);
+camera.rotation.order = 'YXZ';
+camera.position.copy(EYE);
+
+const post = new THREE.ShaderMaterial({
+  uniforms:{ tScene:{ value: rt.texture }, pal:{ value: PALS[0].pal.map(toVec) }, accent:{ value: toVec(PALS[0].accent) }, lo:{ value: 0.10 }, hi:{ value: 0.86 } },
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
+  fragmentShader:`
+    uniform sampler2D tScene; uniform vec3 pal[5]; uniform vec3 accent; uniform float lo, hi; varying vec2 vUv;
+    float bayer2(vec2 a){ a=floor(a); return fract(dot(a, vec2(.5, a.y*.75))); }
+    float bayer4(vec2 a){ return bayer2(.5*a)*.25 + bayer2(a); }
+    void main(){
+      vec3 c = texture2D(tScene, vUv).rgb;
+      float l = pow(max(dot(c, vec3(.299,.587,.114)), 0.), 1./2.2);
+      float v = clamp((l-lo)/(hi-lo), 0., 1.) * 4.;
+      float i = clamp(floor(v + bayer4(gl_FragCoord.xy)), 0., 4.);
+      vec3 o = i < .5 ? pal[0] : i < 1.5 ? pal[1] : i < 2.5 ? pal[2] : i < 3.5 ? pal[3] : pal[4];
+      if (c.r - c.b > 0.12) o = accent;   // 第六色：只給盆栽的葉子
+      gl_FragColor = vec4(o, 1.);
+    }`,
+  depthTest:false, depthWrite:false
+});
+const postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), post));
+
+let RWID = 4, RHGT = 4, SCALE = 3;
+function resize(){
+  const W = innerWidth, H = innerHeight, dpr = Math.min(devicePixelRatio || 1, 3), DW = W*dpr, DH = H*dpr;
+  SCALE = Math.max(2, Math.round(Math.max(DW, DH) / (BASE_H*16/9)));
+  RWID = Math.ceil(DW / SCALE); RHGT = Math.ceil(DH / SCALE);
+  renderer.setSize(RWID, RHGT, false);
+  canvas.style.width = RWID*SCALE/dpr + 'px'; canvas.style.height = RHGT*SCALE/dpr + 'px';
+  rt.setSize(RWID, RHGT);
+  camera.aspect = RWID / RHGT;
+  // 橫式垂直視角 62°；直式改用廣角，像手機躺著往上拍，最多 84°
+  const a = camera.aspect;
+  camera.fov = a >= 1 ? 56 : Math.min(96, 2*THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(28))*Math.max(1, 1.25/a)*0.92)));
+  camera.updateProjectionMatrix();
+  // 直式：像參考照片那樣，吊扇在畫面中上、窗在左下
+  const H0 = a >= 1 ? { yaw: 0.06, pitch: 0.92 } : { yaw: 0.32, pitch: 0.78 };
+  if (HOME.yaw !== H0.yaw && typeof look !== 'undefined' && !look.lastIn){ look.yaw = look.yawT = H0.yaw; look.pitch = look.pitchT = H0.pitch; }
+  Object.assign(HOME, H0);
+}
+addEventListener('resize', resize);
+
+/* ---------- 材質：一律接近中性灰，明暗交給光，色相交給色盤 ---------- */
+const lam = (hex, o = {}) => new THREE.MeshLambertMaterial({ color: hex, flatShading: true, ...o });
+const M = {
+  wall: lam(0xd9d8d4), ceil: lam(0xe6e5e1), trim: lam(0xc9c8c3), floor: lam(0x8c8780),
+  fan: lam(0xd2cfc8), fanDark: lam(0x4a4844), frame: lam(0xb9b9b6), iron: lam(0x3e3d3b),
+  blanket: lam(0xbfc0c4), sheet: lam(0xd4d4d6), wood: lam(0x9e9a92), book: null,
+  curtain: new THREE.MeshLambertMaterial({ color: 0x9fb0c8, transparent:true, opacity:0.78, side:THREE.DoubleSide }),
+  leafOut: lam(0x3f4a3c, { side:THREE.DoubleSide }), pot: lam(0xd7d6d2), plant: lam(0x9aa95a, { side:THREE.DoubleSide }),
+};
+const box = (w,h,d,mat,x,y,z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); m.position.set(x,y,z); m.castShadow = m.receiveShadow = true; scene.add(m); return m; };
+
+/* ---------- 房間 ---------- */
+const T = 0.3;    // 牆厚（加厚並互相重疊，避免牆角漏光）
+// 地板、天花板
+box(RX*2+T*2, T, RZ1-RZ0+T*2, M.floor, 0, -T/2, (RZ0+RZ1)/2);
+box(RX*2+T*2, T, RZ1-RZ0+T*2, M.ceil, 0, RH+T/2, (RZ0+RZ1)/2);
+// 右牆、前牆（腳那頭）、後牆（頭那頭）
+box(T, RH+T*2, RZ1-RZ0+T*2, M.wall, RX+T/2, RH/2, (RZ0+RZ1)/2);
+box(RX*2+T*2, RH+T*2, T, M.wall, 0, RH/2, RZ0-T/2);
+box(RX*2+T*2, RH+T*2, T, M.wall, 0, RH/2, RZ1+T/2);
+// 左牆：四塊圍出窗洞
+box(T, WIN.y0+T, RZ1-RZ0+T*2, M.wall, WX-T/2, (WIN.y0-T)/2, (RZ0+RZ1)/2);
+box(T, RH-WIN.y1+T, RZ1-RZ0+T*2, M.wall, WX-T/2, (RH+T+WIN.y1)/2, (RZ0+RZ1)/2);
+box(T, WIN.y1-WIN.y0, WIN.z0-RZ0+T, M.wall, WX-T/2, (WIN.y0+WIN.y1)/2, (RZ0-T+WIN.z0)/2);
+box(T, WIN.y1-WIN.y0, RZ1+T-WIN.z1, M.wall, WX-T/2, (WIN.y0+WIN.y1)/2, (WIN.z1+RZ1+T)/2);
+// 天花板收邊線與踢腳板
+for (const [w,d,x,z] of [[RX*2,0.05,0,RZ0+0.025],[RX*2,0.05,0,RZ1-0.025],[0.05,RZ1-RZ0,-RX+0.025,(RZ0+RZ1)/2],[0.05,RZ1-RZ0,RX-0.025,(RZ0+RZ1)/2]]){
+  box(w, 0.06, d, M.trim, x, RH-0.03, z);
+  box(w, 0.09, d, M.trim, x, 0.045, z);
+}
+
+/* ---------- 窗：鋁窗框、兩扇推拉窗、上方氣窗、外側鐵窗 ---------- */
+const WM = WIN.z0 + (WIN.z1-WIN.z0)/2, TRANSOM = 2.02;
+const fr = (w,h,d,x,y,z,m=M.frame) => box(w,h,d,m,x,y,z);
+fr(0.1, 0.05, WIN.z1-WIN.z0, WX-0.05, WIN.y0+0.025, WM);
+fr(0.1, 0.05, WIN.z1-WIN.z0, WX-0.05, WIN.y1-0.025, WM);
+fr(0.1, WIN.y1-WIN.y0, 0.05, WX-0.05, (WIN.y0+WIN.y1)/2, WIN.z0+0.025);
+fr(0.1, WIN.y1-WIN.y0, 0.05, WX-0.05, (WIN.y0+WIN.y1)/2, WIN.z1-0.025);
+fr(0.08, 0.045, WIN.z1-WIN.z0, WX-0.05, TRANSOM, WM);                      // 氣窗橫料
+fr(0.035, TRANSOM-WIN.y0, 0.045, WX-0.03, (WIN.y0+TRANSOM)/2, WM-0.03);   // 兩扇窗交會的直料
+fr(0.035, TRANSOM-WIN.y0, 0.045, WX-0.07, (WIN.y0+TRANSOM)/2, WM+0.03);
+fr(0.035, WIN.y1-TRANSOM, 0.035, WX-0.05, (TRANSOM+WIN.y1)/2, WM);
+// 鐵窗：直桿每 11 公分一根，三條橫桿，外框
+const GX = WX - T - 0.13, GRILL = { step:0.11, w:0.016, bars:[1.22, 1.72, 2.2] };
+{
+  const geos = [];
+  for (let z = WIN.z0 + 0.06; z < WIN.z1 - 0.03; z += GRILL.step){ const g = new THREE.BoxGeometry(0.016, WIN.y1-WIN.y0+0.2, GRILL.w); g.translate(GX, (WIN.y0+WIN.y1)/2, z); geos.push(g); }
+  for (const y of [WIN.y0-0.08, ...GRILL.bars, WIN.y1+0.08]){ const g = new THREE.BoxGeometry(0.03, 0.022, WIN.z1-WIN.z0+0.2); g.translate(GX, y, WM); geos.push(g); }
+  for (const z of [WIN.z0-0.1, WIN.z1+0.1]){ const g = new THREE.BoxGeometry(0.03, WIN.y1-WIN.y0+0.2, 0.025); g.translate(GX, (WIN.y0+WIN.y1)/2, z); geos.push(g); }
+  for (const y of [WIN.y0-0.1, WIN.y1+0.1]){ const g = new THREE.BoxGeometry(0.16, 0.025, WIN.z1-WIN.z0+0.2); g.translate(GX+0.08, y, WM); geos.push(g); }   // 鐵窗伸出牆面的頂底板
+  const m = new THREE.Mesh(mergeGeometries(geos), M.iron); m.castShadow = m.receiveShadow = true; scene.add(m);
+}
+// 窗外：亮的天空，加上遠處一排樓的剪影
+const sky = new THREE.Mesh(new THREE.PlaneGeometry(40, 20).rotateY(Math.PI/2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+sky.position.set(-14, 4, 0); scene.add(sky);
+{
+  const geos = [];
+  for (let i = 0; i < 9; i++){ const h = 1.5 + R()*4, w = 1.5 + R()*2.5; const g = new THREE.BoxGeometry(1, h, w); g.translate(-12 + R()*2, h/2 - 3, -9 + i*2.4 + R()); geos.push(g); }
+  const m = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ color: 0x9a9a9a })); scene.add(m);
+}
+
+/* ---------- 窗簾：薄紗，被電扇的風吹得輕輕擺 ---------- */
+function curtainPanel(z0, z1, folds){
+  const g = new THREE.PlaneGeometry(z1-z0, WIN.y1-WIN.y0+0.5, 24, 10).rotateY(Math.PI/2);
+  const base = g.attributes.position.array.slice();
+  const m = new THREE.Mesh(g, M.curtain); m.position.set(WX+0.06, (WIN.y0+WIN.y1)/2+0.17, (z0+z1)/2); m.receiveShadow = true; scene.add(m);
+  return { g, base, folds, z0, z1 };
+}
+const curtains = [curtainPanel(WIN.z1-0.34, WIN.z1+0.42, 7), curtainPanel(WIN.z0-0.38, WIN.z0+0.18, 6)];
+box(0.03, 0.03, WIN.z1-WIN.z0+1.2, M.frame, WX+0.06, WIN.y1+0.45, WM);   // 窗簾桿
+function updateCurtains(t, wind){
+  for (const c of curtains){
+    const p = c.g.attributes.position.array, H = WIN.y1-WIN.y0+0.5;
+    for (let i = 0; i < p.length; i += 3){
+      const z = c.base[i+2], y = c.base[i+1], hang = (H/2 - y)/H;   // 0 在桿子、1 在下擺
+      const fold = Math.sin(z*c.folds*Math.PI/(c.z1-c.z0)*1.6) * 0.035;
+      const sway = (Math.sin(t*0.9 + z*2.1 + y*0.6) * 0.5 + Math.sin(t*1.7 + z*4.0) * 0.25) * wind * hang * hang;
+      p[i] = c.base[i] + fold + sway*0.12 + hang*0.03;
+      p[i+2] = z + sway*0.03;
+    }
+    c.g.attributes.position.needsUpdate = true; c.g.computeVertexNormals();
+  }
+}
+
+/* ---------- 吊扇 ---------- */
+const fan = new THREE.Group(); fan.position.set(FAN.x, RH, FAN.z); scene.add(fan);
+const rotor = new THREE.Group();
+{
+  const cast = m => { m.castShadow = m.receiveShadow = true; return m; };
+  const canopy = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.08, 18), M.fan)); canopy.position.y = -0.04; fan.add(canopy);
+  const rod = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.34, 8), M.fanDark)); rod.position.y = -0.24; fan.add(rod);
+  const collar = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.06, 14), M.fan)); collar.position.y = -0.4; fan.add(collar);
+  rotor.position.y = -0.52; fan.add(rotor);
+  // 馬達外殼：上下兩片圓殼，中間一圈縫
+  const prof = [[0.0,0.11],[0.07,0.105],[0.14,0.08],[0.185,0.04],[0.195,0.0],[0.19,-0.03],[0.16,-0.07],[0.1,-0.1],[0.0,-0.112]].map(([x,y]) => new THREE.Vector2(x,y));
+  const shell = cast(new THREE.Mesh(new THREE.LatheGeometry(prof, 24), M.fan)); rotor.add(shell);
+  const seam = new THREE.Mesh(new THREE.TorusGeometry(0.196, 0.006, 4, 32).rotateX(Math.PI/2), M.fanDark); seam.position.y = -0.005; rotor.add(seam);
+  const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.01, 6), M.fanDark); screw.position.set(0.05, -0.112, 0.02); rotor.add(screw);   // 底殼偏心的小螺絲，看得出在轉
+  // 三片扇葉：圓角長條，有一點傾角；根部三顆鉚釘
+  const s = new THREE.Shape(), L0 = 0.25, L1 = 0.93, Wd = 0.135, cr = 0.035;
+  s.moveTo(L0, -Wd*0.42); s.lineTo(L1-cr, -Wd/2); s.quadraticCurveTo(L1, -Wd/2, L1, -Wd/2+cr); s.lineTo(L1, Wd/2-cr); s.quadraticCurveTo(L1, Wd/2, L1-cr, Wd/2); s.lineTo(L0, Wd*0.42); s.lineTo(L0, -Wd*0.42);
+  const bladeG = new THREE.ExtrudeGeometry(s, { depth: 0.008, bevelEnabled: false, curveSegments: 3 }).rotateX(Math.PI/2);
+  for (let k = 0; k < 3; k++){
+    const arm = new THREE.Group(); arm.rotation.y = k*Math.PI*2/3; rotor.add(arm);
+    const blade = cast(new THREE.Mesh(bladeG, M.fan)); blade.rotation.x = 0.2; blade.position.y = -0.02; arm.add(blade);
+    const iron = cast(new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.014, 0.05), M.fanDark)); iron.position.set(0.24, -0.015, 0); arm.add(iron);
+    for (const [x, z] of [[0.29, -0.035], [0.29, 0.035], [0.33, 0]]){ const r = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.012, 5), M.fanDark); r.position.set(x, -0.032, z); arm.add(r); }
+  }
+}
+
+/* ---------- 床：只看得到棉被和床尾 ---------- */
+{
+  const g = new THREE.PlaneGeometry(1.4, 2.1, 22, 30).rotateX(-Math.PI/2), p = g.attributes.position;
+  for (let i = 0; i < p.count; i++){
+    const x = p.getX(i), z = p.getZ(i), edge = 1 - Math.pow(Math.abs(x)/0.7, 6);
+    const body = Math.exp(-Math.pow((x+0.05)/0.28, 2)) * 0.09 * (z < 0.6 ? 1 : 0.5);   // 被子下面躺著的身體
+    const knees = Math.exp(-Math.pow((z+0.1)/0.22, 2) - Math.pow((x+0.05)/0.3, 2)) * 0.06;
+    p.setY(i, (0.1 + body + knees + (vn(x*7, z*7)-0.5)*0.03) * edge);
+  }
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, M.blanket); m.position.set(0.2, 0.5, 0.05); m.castShadow = m.receiveShadow = true; scene.add(m);
+  box(1.6, 0.5, 2.25, M.sheet, 0.2, 0.25, 0.1);
+  box(1.66, 0.75, 0.05, M.wood, 0.2, 0.375, -1.0);   // 床尾板
+}
+
+/* ---------- 前牆：書櫃、盆栽、小孩畫的畫；右牆：門、冷氣、開關 ---------- */
+{
+  const sx = 1.0, sw = 0.95, sd = 0.3, sh = 1.15, sz = RZ0 + sd/2;
+  box(sw, 0.03, sd, M.wood, sx, sh, sz); box(sw, 0.03, sd, M.wood, sx, 0.04, sz); box(sw, 0.03, sd, M.wood, sx, sh/2, sz);
+  box(0.03, sh, sd, M.wood, sx-sw/2, sh/2, sz); box(0.03, sh, sd, M.wood, sx+sw/2, sh/2, sz); box(sw, sh, 0.02, M.wood, sx, sh/2, RZ0+0.01);
+  for (const shelfY of [0.055, sh/2+0.015]){
+    let x = sx - sw/2 + 0.03;
+    while (x < sx + sw/2 - 0.08){
+      const w = 0.025 + R()*0.035, h = 0.32 + R()*0.18, g = 0.35 + R()*0.55;
+      const b = box(w, h, 0.2, lam(new THREE.Color(g, g, g*1.02)), x + w/2, shelfY + h/2, sz + 0.03);
+      if (R() < 0.12) b.rotation.z = -0.12;
+      x += w + 0.004;
+    }
+  }
+  // 盆栽：黃綠色是畫面裡唯一的「第六色」，和海岸角色的手一樣
+  const pot = box(0.22, 0.2, 0.22, M.pot, sx - 0.2, sh + 0.115, sz); pot.geometry = new THREE.CylinderGeometry(0.12, 0.09, 0.2, 10);
+  const leafG = new THREE.CircleGeometry(0.055, 5).scale(1, 0.7, 1);
+  const vines = [];
+  for (let v = 0; v < 7; v++){
+    const ang = R()*Math.PI*2, len = 0.15 + R()*0.6, up = v < 3;
+    for (let k = 0; k < 9; k++){
+      const t = k/8, l = new THREE.Mesh(leafG, M.plant);
+      const r = 0.06 + t*0.18;
+      l.position.set(sx - 0.2 + Math.cos(ang)*r, sh + 0.22 + (up ? t*0.28 : -t*len), sz + Math.sin(ang)*Math.min(r, 0.12) + 0.03);
+      l.rotation.set(R()*1.5-0.4, R()*3, R()*3); l.castShadow = true; scene.add(l); vines.push(l);
+    }
+  }
+  // 牆上的畫：用 canvas 畫一張小孩的蠟筆畫（樹、房子、太陽），色盤會把它轉成灰階網點
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 160; const c = cv.getContext('2d');
+  c.fillStyle = '#f2f1ec'; c.fillRect(0,0,128,160); c.lineWidth = 3; c.lineCap = 'round';
+  c.strokeStyle = '#888'; c.beginPath(); c.arc(100, 26, 13, 0, 7); c.stroke(); for (let k=0;k<8;k++){ const a=k*0.785; c.beginPath(); c.moveTo(100+Math.cos(a)*18,26+Math.sin(a)*18); c.lineTo(100+Math.cos(a)*25,26+Math.sin(a)*25); c.stroke(); }
+  c.fillStyle = '#7a7a7a'; c.fillRect(30, 80, 8, 40); c.fillStyle = '#5a5a5a'; c.beginPath(); c.arc(34, 72, 22, 0, 7); c.fill();
+  c.strokeStyle = '#555'; c.strokeRect(72, 92, 34, 28); c.beginPath(); c.moveTo(68, 94); c.lineTo(89, 74); c.lineTo(110, 94); c.stroke(); c.fillStyle = '#999'; c.fillRect(84, 104, 9, 16);
+  c.strokeStyle = '#6c6c6c'; for (let x = 4; x < 124; x += 6){ c.beginPath(); c.moveTo(x, 132); c.lineTo(x+2, 122); c.stroke(); }
+  c.strokeStyle = '#999'; c.lineWidth = 2; for (const [x,y] of [[28,28],[52,22]]){ c.beginPath(); c.arc(x,y,7,3.1,6.3); c.arc(x+9,y,7,3.1,6.3); c.stroke(); }
+  const tex = new THREE.CanvasTexture(cv); tex.magFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
+  const art = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.52), new THREE.MeshLambertMaterial({ map: tex })); art.position.set(1.15, 1.62, RZ0 + 0.012); art.receiveShadow = true; scene.add(art);
+  for (const [x,y,r] of [[-0.19,0.24,0.5],[0.19,0.24,-0.5],[-0.19,-0.24,-0.5],[0.19,-0.24,0.5]]){ const tp = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.025), M.trim); tp.position.set(1.15+x, 1.62+y, RZ0+0.016); tp.rotation.z = r; scene.add(tp); }
+  // 右牆：門框與門、分離式冷氣、電燈開關
+  box(0.04, 2.1, 0.06, M.trim, RX-0.02, 1.05, -1.45); box(0.04, 2.1, 0.06, M.trim, RX-0.02, 1.05, -0.55); box(0.04, 0.06, 0.96, M.trim, RX-0.02, 2.1, -1.0);
+  box(0.03, 2.05, 0.84, M.frame, RX-0.015, 1.025, -1.0);
+  const knob = box(0.05, 0.03, 0.03, M.fanDark, RX-0.05, 1.0, -0.65);
+  box(0.22, 0.28, 0.85, M.ceil, RX-0.11, 2.6, 0.75); box(0.02, 0.05, 0.75, M.trim, RX-0.215, 2.5, 0.75);
+  box(0.02, 0.11, 0.07, M.ceil, RX-0.01, 1.25, -0.4);
+}
+
+/* ---------- 光：窗外的太陽、窗外的樹、地板反射到天花板的光 ---------- */
+const sunDir0 = new THREE.Vector3(0.62, -0.42, -0.66).normalize();   // 光行進的方向：從左上往右下、往腳那頭
+const sunDir = sunDir0.clone();
+const sun = new THREE.DirectionalLight(0xffffff, 3.2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-4.5, right:4.5, top:4.5, bottom:-4.5, near:0.5, far:16 });
+sun.shadow.bias = 0.0005; sun.shadow.normalBias = 0.01;   // 正偏移＋法線偏移：牆角不漏光
+scene.add(sun, sun.target);
+const ROOMC = new THREE.Vector3(-0.4, 1.4, -0.8);
+function aimSun(){ sun.target.position.copy(ROOMC); sun.position.copy(ROOMC).addScaledVector(sunDir, -8); sun.target.updateMatrixWorld(); }
+aimSun();
+const hemi = new THREE.HemisphereLight(0xa4a6aa, 0xdcd8d0, 1.5); scene.add(hemi);   // 地板的反光比天上的光亮
+// 地板亮斑反射到天花板：一顆低處的點光，讓扇葉的影子慢慢掃過天花板
+const bounce = new THREE.PointLight(0xffffff, 3.2, 9, 1.6);
+bounce.position.set(-0.55, 0.35, -1.45); bounce.castShadow = true; bounce.shadow.mapSize.set(512, 512); bounce.shadow.camera.near = 0.1; bounce.shadow.camera.far = 8; bounce.shadow.bias = -0.0015; bounce.shadow.normalBias = 0.02;
+scene.add(bounce);
+
+// 窗外的樹：一叢葉子擋在陽光路徑上，隨風擺，室內的光斑跟著閃動
+const LEAF_N = 150, leafMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(0.09, 5).scale(1.3, 0.8, 1), M.leafOut, LEAF_N);
+leafMesh.castShadow = true; scene.add(leafMesh);
+const leaves = [];
+{
+  const wc = new THREE.Vector3(WX, (WIN.y0+WIN.y1)/2, WM);
+  for (let i = 0; i < LEAF_N; i++){
+    const t = 1.6 + R()*1.6;
+    const p = wc.clone().addScaledVector(sunDir0, -t);
+    // 葉叢偏窗的上半與靠頭那側，讓下半部的光斑完整
+    p.y += 0.95 + R()*0.9; p.z += 0.5 + (R()-0.5)*1.8; p.x += (R()-0.5)*0.6;
+    leaves.push({ p, r: new THREE.Euler(R()*3, R()*3, R()*3), ph: R()*6.28, k: 0.5 + R() });
+  }
+  // 一根樹枝
+  const br = box(0.06, 0.06, 2.6, M.leafOut, wc.x - 2.4, wc.y + 1.25, wc.z + 0.4); br.rotation.x = 0.35; br.rotation.y = 0.2;
+}
+const LM = new THREE.Matrix4(), LQ = new THREE.Quaternion(), LS = new THREE.Vector3(1,1,1), LP = new THREE.Vector3(), LE = new THREE.Euler();
+function updateLeaves(t, breeze){
+  for (let i = 0; i < LEAF_N; i++){
+    const L = leaves[i], s = Math.sin(t*1.3*L.k + L.ph) * 0.05 * (0.4 + breeze), g = Math.sin(t*0.45 + L.p.y*0.8) * 0.06 * breeze;
+    LP.set(L.p.x, L.p.y + s*0.6, L.p.z + s + g);
+    LE.set(L.r.x + s*4, L.r.y + s*3, L.r.z); LQ.setFromEuler(LE); LM.compose(LP, LQ, LS); leafMesh.setMatrixAt(i, LM);
+  }
+  leafMesh.instanceMatrix.needsUpdate = true;
+}
+
+/* ---------- 光束：從窗洞沿陽光方向拉出的稜柱，用 shader 畫出窗框與鐵窗的條紋 ---------- */
+const BEAM_L = 5.2;
+const beamMat = new THREE.ShaderMaterial({
+  uniforms:{ uD:{ value: sunDir }, uI:{ value: 1 }, uT:{ value: 0 } },
+  vertexShader:`
+    attribute vec3 aC; uniform vec3 uD; varying vec3 vW;
+    void main(){ vec3 p = vec3(${WX.toFixed(3)}, aC.x, aC.y) + uD * ${BEAM_L.toFixed(2)} * aC.z; vW = p; gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`,
+  fragmentShader:`
+    uniform vec3 uD; uniform float uI, uT; varying vec3 vW;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
+    float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
+    void main(){
+      float s = (vW.x - ${WX.toFixed(3)}) / uD.x;           // 離窗多遠
+      vec3 q = vW - uD * s;                                   // 投回窗面的位置
+      float m = 1.;
+      m *= step(0.026, abs(q.z - ${(WM).toFixed(3)}));         // 兩扇窗交會的直料
+      m *= step(0.024, abs(q.y - ${TRANSOM.toFixed(3)}));      // 氣窗橫料
+      float gz = fract((q.z - ${(WIN.z0+0.06).toFixed(3)}) / ${GRILL.step.toFixed(3)} + 0.5) - 0.5;
+      m *= mix(0.25, 1., step(${(GRILL.w/2/GRILL.step).toFixed(4)}, abs(gz)));   // 鐵窗直桿
+      ${GRILL.bars.map(y => `m *= mix(0.3, 1., step(0.012, abs(q.y - ${y.toFixed(3)})));`).join('\n      ')}
+      float leaf = smoothstep(0.35, 0.65, vn(q.zy*5. + vec2(uT*0.25, sin(uT*0.4)*0.6)));
+      m *= mix(1., 0.35, leaf * smoothstep(2.05, 2.4, q.y));    // 上半段被樹葉擋住一部分
+      float edge = smoothstep(0., 0.06, q.z - ${WIN.z0.toFixed(3)}) * smoothstep(0., 0.06, ${WIN.z1.toFixed(3)} - q.z) * smoothstep(0., 0.06, q.y - ${WIN.y0.toFixed(3)}) * smoothstep(0., 0.06, ${WIN.y1.toFixed(3)} - q.y);
+      float fade = pow(clamp(1. - s/${BEAM_L.toFixed(2)}, 0., 1.), 1.3) * smoothstep(0., 0.25, s);
+      float a = uI * 0.055 * m * edge * fade * (0.85 + 0.15*vn(vW.xy*3. + uT*0.2));
+      gl_FragColor = vec4(vec3(1.0, 0.98, 0.94) * a, 1.);
+    }`,
+  transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide
+});
+{
+  const c = [[WIN.y0,WIN.z0],[WIN.y1,WIN.z0],[WIN.y1,WIN.z1],[WIN.y0,WIN.z1]], v = [], idx = [];
+  for (const e of [0,1]) for (const [y,z] of c) v.push(y, z, e);
+  for (let i = 0; i < 4; i++){ const j = (i+1)%4; idx.push(i, j, j+4, i, j+4, i+4); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('aC', new THREE.Float32BufferAttribute(v, 3)); g.setAttribute('position', new THREE.Float32BufferAttribute(new Array(24).fill(0), 3)); g.setIndex(idx);
+  const beam = new THREE.Mesh(g, beamMat); beam.frustumCulled = false; beam.renderOrder = 2; scene.add(beam);
+}
+
+/* ---------- 灰塵：只在光束裡看得到，被電扇的風攪得慢慢打轉 ---------- */
+const DUST_N = 520;
+const dustMat = new THREE.ShaderMaterial({
+  uniforms:{ uD:{ value: sunDir }, uI:{ value: 1 }, uT:{ value: 0 }, uFan:{ value: 0 }, uPx:{ value: 1 } },
+  vertexShader:`
+    attribute vec4 aS; uniform vec3 uD; uniform float uT, uFan, uPx; varying float vA;
+    void main(){
+      float y = mix(${WIN.y0.toFixed(2)}, ${WIN.y1.toFixed(2)}, aS.x), z = mix(${WIN.z0.toFixed(2)}, ${WIN.z1.toFixed(2)}, aS.y);
+      vec3 p = vec3(${WX.toFixed(3)}, y, z) + uD * (0.25 + aS.z * 3.4);
+      float w = uT * (0.05 + 0.08*uFan);
+      p += vec3(sin(w*1.3 + aS.w*6.28), sin(w*0.7 + aS.w*9.1) * 0.6 + sin(uT*0.05 + aS.w*4.0) * 0.4, cos(w*1.1 + aS.w*3.3)) * (0.06 + 0.1*uFan);
+      vA = (0.5 + 0.5*sin(uT*(0.6 + aS.w) + aS.w*40.)) * (1. - aS.z*0.6);
+      vec4 mv = viewMatrix * vec4(p, 1.);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = uPx * clamp(2.2 / -mv.z, 1., 2.);
+    }`,
+  fragmentShader:`uniform float uI; varying float vA; void main(){ gl_FragColor = vec4(vec3(0.55) * vA * uI, 1.); }`,
+  transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
+});
+{
+  const a = new Float32Array(DUST_N*4); for (let i = 0; i < a.length; i++) a[i] = R();
+  const g = new THREE.BufferGeometry(); g.setAttribute('aS', new THREE.BufferAttribute(a, 4)); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DUST_N*3), 3));
+  const pts = new THREE.Points(g, dustMat); pts.frustumCulled = false; pts.renderOrder = 3; scene.add(pts);
+}
+
+/* ---------- 狀態與操作 ---------- */
+const st = { started:false, uiOn:true, muted:false, fan:2, spin:0, angle:0, sunK:1, sunTarget:1, nextCloud:30, cloudUntil:0, pal:0, palT:0, palBoost:false, clock0: 14*60 };
+const FAN_RPS = [0, 0.75, 1.35, 2.1];   // 每秒轉幾圈：關、一段、二段、三段
+const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, lastIn: 0, ret: null };
+function clampLook(){ look.yawT = THREE.MathUtils.clamp(look.yawT, -1.95, 1.95); look.pitchT = THREE.MathUtils.clamp(look.pitchT, -0.2, 1.56); }
+
+const KEYMAP = { f:'fan', m:'sound', p:'palette', o:'reset', '0':'reset', h:'ui' };
+const ACT = {
+  fan(){ st.fan = (st.fan + 1) % 4; renderKeys(); },
+  sound(){ st.muted = !st.muted; if (audio) audio.master.gain.value = st.muted ? 0 : 0.9; resumeAudio(); renderKeys(); },
+  palette(){ setPalette((st.pal + 1) % PALS.length); },
+  reset(){ look.yawT = HOME.yaw; look.pitchT = HOME.pitch; look.ret = null; },
+  ui(){ setUI(!st.uiOn); },
+};
+const keys = new Set();
+addEventListener('keydown', e => {
+  if (!st.started) return;
+  const k = e.key.toLowerCase();
+  if (KEYMAP[k]) { ACT[KEYMAP[k]](); return; }
+  if (['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'].includes(k)){ keys.add(k); e.preventDefault(); }
+});
+addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+const hudEl = document.getElementById('hud'), uiBtn = document.getElementById('uiBtn');
+function setUI(on){ st.uiOn = on; hudEl.hidden = !on; uiBtn.textContent = on ? 'Hide UI' : 'Show UI'; uiBtn.setAttribute('aria-pressed', String(!on)); }
+uiBtn.addEventListener('click', () => ACT.ui());
+
+// 鏡頭只轉不移：拖曳轉頭，雙擊／雙點回到看吊扇的角度
+const drag = new Map(); let lastTap = 0;
+canvas.addEventListener('pointerdown', e => { if (!st.started) return; resumeAudio();
+  if (e.pointerType === 'touch'){ const now = performance.now(); if (drag.size) lastTap = 0; else { if (now - lastTap < 300) ACT.reset(); lastTap = now; } }
+  drag.set(e.pointerId, { x:e.clientX, y:e.clientY }); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  const d = drag.get(e.pointerId); if (!d || drag.size > 1) return;
+  const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
+  const k = (camera.fov / 62) * 1.25 / Math.max(innerHeight, 1);
+  look.yawT += dx*k*1.6; look.pitchT += dy*k*1.6; look.lastIn = performance.now(); look.ret = null; clampLook();
+});
+const up = e => drag.delete(e.pointerId);
+canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('dblclick', () => ACT.reset());
+
+const keysEl = document.getElementById('keys');
+keysEl.addEventListener('click', e => { const b = e.target.closest('button[data-a]'); if (b && ACT[b.dataset.a]) ACT[b.dataset.a](); });
+const fanLbl = document.getElementById('fanLbl');
+function renderKeys(){
+  const B = (a, k, label, off) => `<button class="k" type="button" data-a="${a}"><b>${k}</b><i class="${off?'off':''}">${label}</i></button>`;
+  keysEl.innerHTML = `<div class="row"><b>DRAG</b><i>look around</i></div>` + B('reset','O','reset view') +
+    B('fan','F', st.fan ? `fan · speed ${st.fan}` : 'fan · off', !st.fan) +
+    B('sound','M',`sound ${st.muted?'off':'on'}`, st.muted) +
+    B('palette','P',`palette · ${PALS[st.pal].en.toLowerCase()}`);
+  fanLbl.textContent = st.fan ? `FAN · ${st.fan}` : 'FAN · OFF';
+}
+
+// 色盤和海岸一樣自動漸變：四組輪流，一圈 15 分鐘；P 用十倍速轉到下一組
+const PAL_CYCLE = 900, PAL_SEG = PAL_CYCLE/PALS.length, PAL_HOLD = PAL_SEG*0.6;
+const PALV = PALS.map(P => ({ pal: P.pal.map(toVec), accent: toVec(P.accent) }));
+post.uniforms.pal.value = PALV[0].pal.map(v => v.clone()); post.uniforms.accent.value = PALV[0].accent.clone();
+function updatePalette(dt){
+  if (st.palBoost){ dt *= 10; if (st.palT % PAL_SEG < PAL_HOLD - 1) st.palBoost = false; }
+  st.palT = (st.palT + dt) % PAL_CYCLE;
+  const i = Math.floor(st.palT/PAL_SEG), j = (i + 1) % PALS.length, u = st.palT - i*PAL_SEG;
+  const k = THREE.MathUtils.smoothstep(u, PAL_HOLD, PAL_SEG), A = PALV[i], B = PALV[j];
+  post.uniforms.pal.value.forEach((v, n) => v.lerpVectors(A.pal[n], B.pal[n], k));
+  post.uniforms.accent.value.lerpVectors(A.accent, B.accent, k);
+  const now = k < 0.5 ? i : j; if (now !== st.pal){ st.pal = now; renderKeys(); }
+}
+function setPalette(i){ st.palT = ((i - 1 + PALS.length) % PALS.length)*PAL_SEG + PAL_HOLD; st.palBoost = true; }
+
+/* ---------- 聲音：吊扇的風聲與馬達聲、窗外的蟬和鳥 ---------- */
+let audio = null;
+function resumeAudio(){ if (audio && audio.ac.state !== 'running') audio.ac.resume().catch(() => {}); }
+['touchend','click','keydown'].forEach(ev => addEventListener(ev, () => { if (st.started) resumeAudio(); }, { capture:true, passive:true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAudio(); });
+// iOS 靜音鍵開著時 WebAudio 沒聲音：先播一段無聲的 <audio>，把 session 切成媒體播放
+function unlockMedia(){
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try {
+    const n = 2205, b = new ArrayBuffer(44 + n*2), v = new DataView(b), w = (o, t) => { for (let i=0;i<t.length;i++) v.setUint8(o+i, t.charCodeAt(i)); };
+    w(0,'RIFF'); v.setUint32(4, 36 + n*2, true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,22050,true); v.setUint32(28,44100,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40, n*2, true);
+    const el = new Audio(URL.createObjectURL(new Blob([b], { type:'audio/wav' })));
+    el.setAttribute('playsinline', ''); el.loop = true; el.volume = 0.01; const pr = el.play(); if (pr) pr.catch(() => {});
+  } catch (e) {}
+}
+function startAudio(){
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const len = ac.sampleRate*4, brown = ac.createBuffer(1, len, ac.sampleRate), white = ac.createBuffer(1, len, ac.sampleRate);
+    const bd = brown.getChannelData(0), wd = white.getChannelData(0); let last = 0;
+    for (let i=0;i<len;i++){ const w = Math.random()*2-1; wd[i] = w; last = (last + 0.02*w)/1.02; bd[i] = last*3.5; }
+    const master = ac.createGain(); master.gain.value = st.muted ? 0 : 0.9;
+    // 手機喇叭放不出低頻：觸控裝置把風聲往中頻移，並用壓縮器拉高整體音量
+    const phone = matchMedia('(hover: none)').matches;
+    if (phone){ const comp = ac.createDynamicsCompressor(); comp.threshold.value = -30; comp.ratio.value = 4; const mk = ac.createGain(); mk.gain.value = 2.5; master.connect(comp); comp.connect(mk); mk.connect(ac.destination); }
+    else master.connect(ac.destination);
+    const tick = ac.createBufferSource(); tick.buffer = ac.createBuffer(1, 1, ac.sampleRate); tick.connect(ac.destination); tick.start(0);
+    const loop = (buf, off) => { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.start(0, off); return s; };
+    // 扇葉切風：棕噪音過帶通，音量隨葉片通過的頻率（每秒圈數 × 3）起伏
+    const airF = ac.createBiquadFilter(); airF.type = 'bandpass'; airF.frequency.value = phone ? 900 : 520; airF.Q.value = 0.7;
+    const airG = ac.createGain(); airG.gain.value = 0;
+    const airAM = ac.createGain(); airAM.gain.value = 1;
+    loop(brown, 0).connect(airF); airF.connect(airAM); airAM.connect(airG); airG.connect(master);
+    const lfo = ac.createOscillator(); lfo.frequency.value = 4; const lfoG = ac.createGain(); lfoG.gain.value = 0; lfo.connect(lfoG); lfoG.connect(airAM.gain); lfo.start();
+    // 馬達低鳴
+    const hum = ac.createOscillator(); hum.type = 'triangle'; hum.frequency.value = 100;
+    const humF = ac.createBiquadFilter(); humF.type = 'lowpass'; humF.frequency.value = 260;
+    const humG = ac.createGain(); humG.gain.value = 0;
+    hum.connect(humF); humF.connect(humG); humG.connect(master); hum.start();
+    // 窗外的蟬：高頻帶通噪音，用約 45Hz 顫動，整體慢慢起落
+    const cicF = ac.createBiquadFilter(); cicF.type = 'bandpass'; cicF.frequency.value = 5200; cicF.Q.value = 6;
+    const cicAM = ac.createGain(); cicAM.gain.value = 0.6;
+    const cicG = ac.createGain(); cicG.gain.value = 0;
+    loop(white, 1.3).connect(cicF); cicF.connect(cicAM); cicAM.connect(cicG); cicG.connect(master);
+    const cicL = ac.createOscillator(); cicL.frequency.value = 46; const cicLG = ac.createGain(); cicLG.gain.value = 0.45; cicL.connect(cicLG); cicLG.connect(cicAM.gain); cicL.start();
+    // 樹葉沙沙聲
+    const rusF = ac.createBiquadFilter(); rusF.type = 'highpass'; rusF.frequency.value = 2600;
+    const rusG = ac.createGain(); rusG.gain.value = 0;
+    loop(white, 2.2).connect(rusF); rusF.connect(rusG); rusG.connect(master);
+    audio = { ac, master, phone, airG, airF, lfo, lfoG, hum, humG, cicG, rusG, white, nextBird: 6 };
+    resumeAudio();
+  } catch (err) { audio = null; }
+}
+// 偶爾一隻鳥叫：幾個快速上下滑的音
+function bird(){
+  const ac = audio.ac, at = ac.currentTime + 0.05, n = 2 + Math.floor(Math.random()*4), base = 2600 + Math.random()*1400;
+  for (let i = 0; i < n; i++){
+    const o = ac.createOscillator(), g = ac.createGain(), t0 = at + i*(0.13 + Math.random()*0.08);
+    o.type = 'sine'; o.frequency.setValueAtTime(base*(0.9 + Math.random()*0.2), t0); o.frequency.exponentialRampToValueAtTime(base*(1.25 + Math.random()*0.3), t0 + 0.07);
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.018*(audio.phone ? 1.6 : 1), t0 + 0.015); g.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.1);
+    o.connect(g); g.connect(audio.master); o.start(t0); o.stop(t0 + 0.12);
+  }
+}
+
+/* ---------- 每一格 ---------- */
+let last = performance.now(), T0 = last;
+const clockEl = document.getElementById('clock'); let lastMin = -1;
+function frame(now){
+  const dt = THREE.MathUtils.clamp((now - last)/1000, 0, 0.05); last = now;
+  const t = (now - T0)/1000;
+
+  // 吊扇：開機慢慢加速、關掉後滑行很久才停
+  const target = FAN_RPS[st.fan], tau = target > st.spin ? 2.4 : 7;
+  st.spin += (target - st.spin) * (1 - Math.exp(-dt/tau));
+  st.angle = (st.angle + st.spin*Math.PI*2*dt) % (Math.PI*2*3);
+  rotor.rotation.y = st.angle;
+  const wob = 0.005 * st.spin/2.1;
+  fan.rotation.x = Math.sin(t*st.spin*Math.PI*2*0.5) * wob; fan.rotation.z = Math.cos(t*st.spin*Math.PI*2*0.5 + 0.7) * wob;
+
+  // 陽光：方向隨午後慢慢偏移；偶爾有雲飄過，光斑和光束一起暗下來
+  const drift = Math.sin(t/900*Math.PI*2) * 0.06;
+  sunDir.copy(sunDir0).applyAxisAngle(new THREE.Vector3(0,1,0), drift).normalize(); aimSun();
+  if (t > st.nextCloud){ st.sunTarget = 0.28 + Math.random()*0.25; st.cloudUntil = t + 7 + Math.random()*14; st.nextCloud = st.cloudUntil + 35 + Math.random()*60; }
+  if (st.cloudUntil && t > st.cloudUntil){ st.sunTarget = 1; st.cloudUntil = 0; }
+  st.sunK += (st.sunTarget - st.sunK) * (1 - Math.exp(-dt/2.2));
+  const breeze = 0.5 + 0.5*Math.sin(t*0.21) * Math.sin(t*0.077 + 1.3);
+  sun.intensity = 3.2 * st.sunK;
+  bounce.intensity = 1.6 * (0.25 + 0.75*st.sunK);
+  hemi.intensity = 1.25 + 0.3*st.sunK;
+  beamMat.uniforms.uI.value = st.sunK; beamMat.uniforms.uT.value = t;
+  dustMat.uniforms.uI.value = st.sunK; dustMat.uniforms.uT.value = t; dustMat.uniforms.uFan.value = st.spin/2.1;
+  updateLeaves(t, breeze);
+  updateCurtains(t, 0.25 + 0.75*st.spin/2.1 + 0.3*breeze);
+
+  // 鏡頭：只轉不移。閒置 1 分鐘後花最多 30 秒慢慢轉回看吊扇的角度（與海岸相同的節奏）
+  const kx = (keys.has('arrowleft')||keys.has('a') ? 1 : 0) - (keys.has('arrowright')||keys.has('d') ? 1 : 0);
+  const ky = (keys.has('arrowup')||keys.has('w') ? 1 : 0) - (keys.has('arrowdown')||keys.has('s') ? 1 : 0);
+  if (kx || ky){ look.yawT += kx*dt*0.9; look.pitchT += ky*dt*0.7; look.lastIn = now; look.ret = null; clampLook(); }
+  const off = Math.max(Math.abs(look.yawT - HOME.yaw)/1.95, Math.abs(look.pitchT - HOME.pitch)/1.1);
+  if (!look.ret && off > 0.01 && look.lastIn && now - look.lastIn > 60000 && !drag.size){
+    look.ret = { t0: now, dur: 30000*Math.min(1, off), y0: look.yawT, p0: look.pitchT };
+  }
+  if (look.ret){
+    const u = Math.min(1, (now - look.ret.t0)/look.ret.dur), e = 0.5 - 0.5*Math.cos(Math.PI*u);
+    look.yawT = THREE.MathUtils.lerp(look.ret.y0, HOME.yaw, e); look.pitchT = THREE.MathUtils.lerp(look.ret.p0, HOME.pitch, e);
+    if (u >= 1) look.ret = null;
+  }
+  const lk = 1 - Math.exp(-dt*9);
+  look.yaw += (look.yawT - look.yaw)*lk; look.pitch += (look.pitchT - look.pitch)*lk;
+  // 呼吸：鏡頭極輕微地起伏
+  const br = Math.sin(t*Math.PI*2/5.2);
+  camera.position.set(EYE.x, EYE.y + br*0.004, EYE.z);
+  camera.rotation.set(look.pitch + br*0.0025, look.yaw, 0);
+  dustMat.uniforms.uPx.value = Math.max(1, Math.round(RHGT/540));
+
+  updatePalette(dt);
+
+  if (audio && !st.muted){
+    const at = audio.ac.currentTime, s = st.spin/2.1;
+    audio.airG.gain.setTargetAtTime(0.11*s*(audio.phone ? 1.4 : 1), at, 0.3);
+    audio.airF.frequency.setTargetAtTime((audio.phone ? 750 : 380) + 380*s, at, 0.3);
+    audio.lfo.frequency.setTargetAtTime(Math.max(0.5, st.spin*3), at, 0.2); audio.lfoG.gain.setTargetAtTime(0.35*s, at, 0.3);
+    audio.hum.frequency.setTargetAtTime(96 + 10*s, at, 0.5); audio.humG.gain.setTargetAtTime(0.02*Math.min(1, s*3), at, 0.4);
+    audio.cicG.gain.setTargetAtTime((0.006 + 0.006*(0.5 + 0.5*Math.sin(t*0.05)))*(audio.phone ? 1.5 : 1), at, 1.5);
+    audio.rusG.gain.setTargetAtTime(0.004 + 0.01*breeze, at, 0.8);
+    if (t > audio.nextBird){ bird(); audio.nextBird = t + 8 + Math.random()*22; }
+  }
+
+  // HUD：從下午兩點開始，跟著真實時間走
+  const mins = Math.floor(st.clock0 + t/60);
+  if (mins !== lastMin){ lastMin = mins; const h = Math.floor(mins/60) % 12 || 12; clockEl.textContent = `${h}:${String(mins%60).padStart(2,'0')}`; }
+
+  renderer.setRenderTarget(rt); renderer.render(scene, camera);
+  renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+  requestAnimationFrame(frame);
+}
+
+resize();
+renderKeys();
+requestAnimationFrame(frame);
+document.getElementById('start').addEventListener('click', () => {
+  st.started = true;
+  document.getElementById('intro').classList.add('gone');
+  unlockMedia(); startAudio();
+  setUI(true); uiBtn.hidden = false;
+});
+window.__fan = { st, look, ACT, scene, beamMat, dustMat, sun, bounce };
+</script>

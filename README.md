@@ -27,7 +27,12 @@ On phones and tablets: drag with one finger to orbit, pinch with two fingers to 
 
 A specific shore can be opened with a seed in the URL hash, e.g. `index.html#s12345`.
 
+## Also here
+
+**A slow afternoon** — lying in bed looking up at a turning ceiling fan while afternoon sun comes through the window. Same renderer and palettes. Live: https://kaochieh224.github.io/walk/fan/ (drag to look around; F fan speed, M sound, P palette, O reset view, H hide UI).
+
 ## Files
 
 - `index.html` — the whole experience
 - `visual-spec.md` — visual specification and change log
+- `fan/index.html`, `fan/visual-spec.md` — A slow afternoon
