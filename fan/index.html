@@ -418,7 +418,38 @@ const rotor = new THREE.Group();
     box(0.46, 0.05, 0.44, lam(0x5a6276), cx, 0.47, cz);
     box(0.035, 0.42, 0.035, oak, cx - 0.2, 0.7, cz - 0.2); box(0.035, 0.42, 0.035, oak, cx + 0.2, 0.7, cz - 0.2); box(0.44, 0.16, 0.025, oak, cx, 0.82, cz - 0.21); }
   // 不鏽鋼垃圾桶
-  { const bin = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.12, 0.42, 20), steel); bin.position.set(DX - DW/2 - 0.22, 0.21, RZ0 + 0.25); bin.castShadow = true; scene.add(bin); }
+  { const bin = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.12, 0.42, 20), steel); bin.position.set(DX - DW/2 + 0.2, 0.21, RZ0 + 0.2); bin.castShadow = true; scene.add(bin); }
+  // 書桌左邊的書櫃（2026-10-10 使用者要求）：同色橡木、五層開放式，書有直立、有斜靠、有平放成疊，夾著幾個收納盒和小東西
+  { const BW = 0.82, BD = 0.3, BH = 1.86, BX = DX - DW/2 - 0.03 - BW/2, BZ = RZ0 + BD/2 + 0.01;
+    box(0.025, BH, BD, oak, BX - BW/2 + 0.0125, BH/2, BZ); box(0.025, BH, BD, oak, BX + BW/2 - 0.0125, BH/2, BZ);
+    box(BW, BH, 0.012, oakDark, BX, BH/2, RZ0 + 0.016);                             // 背板
+    box(BW - 0.05, 0.07, 0.015, oakDark, BX, 0.035, BZ + BD/2 - 0.02);                // 踢腳
+    const SH = [0.07, 0.43, 0.79, 1.14, 1.5, BH - 0.0125];
+    for (const y of SH) box(BW, 0.025, BD, oak, BX, y, BZ);
+    const cols = [0x7aa6c8, 0xe2dccb, 0x3f6f9a, 0xc9b98f, 0x8fb7a0, 0xd9d4c6, 0x5f86b0, 0xefe9da, 0xb5523e, 0x2f4a3a, 0xd8b45a, 0x8a7a9a];
+    for (let s = 0; s < 5; s++){
+      const y0 = SH[s] + 0.0125, room = SH[s+1] - y0 - 0.03; let x = BX - BW/2 + 0.035; const xEnd = BX + BW/2 - 0.035;
+      while (x < xEnd - 0.04){
+        const r = R();
+        if (r < 0.1 && xEnd - x > 0.2){                                               // 一疊平放的書
+          const n = 2 + Math.floor(R()*4); let y = y0;
+          for (let k = 0; k < n; k++){ const th = 0.025 + R()*0.02, w = 0.17 + R()*0.06; box(w, th, 0.19 + R()*0.05, lam(cols[Math.floor(R()*cols.length)]), x + 0.11 + (R()-0.5)*0.02, y + th/2, BZ + 0.02); y += th; }
+          x += 0.25;
+        } else if (r < 0.17 && xEnd - x > 0.18){                                      // 收納盒或小東西
+          const w = 0.12 + R()*0.06, h = Math.min(room*0.6, 0.1 + R()*0.08); box(w, h, 0.2, lam([0xf2f0ea, 0xd9cdb4, 0x5a6276][Math.floor(R()*3)]), x + w/2 + 0.01, y0 + h/2, BZ + 0.02);
+          x += w + 0.03;
+        } else if (r < 0.22){                                                         // 一本斜靠的書
+          const w = 0.03, h = Math.min(room*0.92, 0.2 + R()*0.06), lean = 0.25 + R()*0.15;
+          const b = box(w, h, 0.18, lam(cols[Math.floor(R()*cols.length)]), x + Math.sin(lean)*h/2 + w/2, y0 + Math.cos(lean)*h/2, BZ + 0.03); b.rotation.z = -lean;
+          x += Math.sin(lean)*h + w + 0.02;
+        } else {                                                                      // 直立的書
+          const w = 0.02 + R()*0.03, h = Math.min(room*0.95, 0.19 + R()*0.11);
+          box(w, h, 0.17 + R()*0.06, lam(cols[Math.floor(R()*cols.length)]), x + w/2, y0 + h/2, BZ + 0.02 + (R()-0.5)*0.02);
+          x += w + 0.002;
+        }
+      }
+    }
+  }
   // 綠紋虎尾蘭：黑色方盆，七片直立、往上收尖的劍形葉，淺綠底上有深綠的橫向波紋
   {
     const PX = HX - HW/2 + 0.2, PY = DH + HH + 0.0125, PZ = HZ;
@@ -462,7 +493,7 @@ const rotor = new THREE.Group();
   c.fillStyle = '#f3d99a'; c.fillRect(72, 92, 34, 28); c.fillStyle = '#d0453a'; c.beginPath(); c.moveTo(66, 94); c.lineTo(89, 72); c.lineTo(112, 94); c.fill(); c.fillStyle = '#8a5a3a'; c.fillRect(84, 104, 9, 16);
   c.lineWidth = 2.5; c.strokeStyle = '#5aa83a'; for (let x = 4; x < 124; x += 5){ c.beginPath(); c.moveTo(x, 134); c.lineTo(x+2, 121); c.stroke(); }
   const tex = new THREE.CanvasTexture(cv); tex.magFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
-  const art = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.52), new THREE.MeshLambertMaterial({ map: tex })); art.position.set(0.48, 1.78, RZ0 + 0.012); art.receiveShadow = true; scene.add(art);   // 掛在書桌右上方
+  const art = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.52), new THREE.MeshLambertMaterial({ map: tex })); art.position.set(-0.45, 1.6, RZ0 + 0.012); art.receiveShadow = true; scene.add(art);   // 掛在書桌右上方
   // 右牆：門框與門、電燈開關（冷氣已依使用者 2026-10-10 要求拿掉）
   box(0.04, 2.1, 0.06, M.trim, RX-0.02, 1.05, -1.45); box(0.04, 2.1, 0.06, M.trim, RX-0.02, 1.05, -0.55); box(0.04, 0.06, 0.96, M.trim, RX-0.02, 2.1, -1.0);
   // 實木門（2026-10-10 使用者要求）：深一點的柚木色，門面上下兩塊淺淺的凸框
