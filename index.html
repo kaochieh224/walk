@@ -855,7 +855,7 @@ const ACT = {
   rain(){ st.rainTarget = st.rainTarget ? 0 : 1; renderKeys(); },
   palette(){ setPalette((st.pal + 1) % PALS.length); },
   shore(){ applySeed(Math.floor(Math.random()*1e5)); },
-  reset(){ cam.orbitT = 0; cam.zoomT = 1; },
+  reset(){ cam.orbitT = 0; cam.zoomT = 1; cam.retFrom = undefined; },
   ui(){ setUI(!st.uiOn); },
 };
 const hudEl = document.getElementById('hud'), uiBtn = document.getElementById('uiBtn');
@@ -1095,8 +1095,14 @@ function frame(){
   if (keys.has('arrowleft') || keys.has('a')) cam.orbitT += dt*0.9;
   if (keys.has('arrowright')|| keys.has('d')) cam.orbitT -= dt*0.9;
   if (keys.has('arrowleft') || keys.has('a') || keys.has('arrowright') || keys.has('d') || drag.size) cam.lastIn = performance.now();
-  // 手動轉過鏡頭後放著不動 10 秒，鏡頭慢慢轉回角色背後
-  else if (cam.orbitT !== 0 && performance.now() - (cam.lastIn || 0) > 10000){ cam.orbitT *= Math.exp(-dt*0.45); if (Math.abs(cam.orbitT) < 0.002) cam.orbitT = 0; }
+  // 手動轉過鏡頭後放著不動 1 分鐘，鏡頭才非常慢地轉回角色背後：從最歪（1.3）轉回來要 30 秒，頭尾緩起緩停
+  else if (cam.orbitT !== 0 && performance.now() - (cam.lastIn || 0) > 60000){
+    if (cam.retFrom === undefined){ cam.retFrom = cam.orbitT; cam.retP = 0; }
+    cam.retP = Math.min(1, cam.retP + dt/(30*Math.max(0.15, Math.abs(cam.retFrom)/1.3)));
+    cam.orbitT = cam.retFrom*(0.5 + 0.5*Math.cos(Math.PI*cam.retP));
+    if (cam.retP >= 1){ cam.orbitT = 0; cam.retFrom = undefined; }
+  }
+  if (performance.now() - (cam.lastIn || 0) <= 60000) cam.retFrom = undefined;   // 使用者又動了鏡頭就重新計時
   clampCam();
   cam.orbit += (cam.orbitT - cam.orbit) * Math.min(1, dt*5); cam.zoom += (cam.zoomT - cam.zoom) * Math.min(1, dt*5);
   {

@@ -14,7 +14,7 @@ Or open `index.html` in a modern browser. It is a single file; three.js loads fr
 
 | Key | Action |
 | --- | --- |
-| Drag / ← → | Orbit the camera (behind the figure only; recentres after 10 s idle) |
+| Drag / ← → | Orbit the camera (behind the figure only; slowly recentres after 1 min idle) |
 | Scroll | Zoom in / out (limited range) |
 | O | Reset view |
 | N | New shore (new random seed) |
