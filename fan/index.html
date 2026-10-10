@@ -375,6 +375,35 @@ const rotor = new THREE.Group();
   box(1.66, 0.75, 0.05, M.wood, 0.2, 0.375, -1.0);   // 床尾板
 }
 
+/* ---------- 窗戶左邊（床頭那側）的頂天木衣櫃（2026-10-10 使用者要求）：台灣老房間那種柚木色貼皮衣櫃，
+   下段三扇長門（中間那扇嵌長鏡），上段到天花板的三扇小門收棉被，門上有細線框、黃銅小把手和鎖孔 ---------- */
+{
+  const wd = lam(0x93653f), wdDark = lam(0x7a5233), brass = new THREE.MeshStandardMaterial({ color: 0xc9a25a, metalness: 0.7, roughness: 0.35 });
+  const mirror = new THREE.MeshStandardMaterial({ color: 0xc3c9cc, metalness: 0.35, roughness: 0.12 });
+  const KD = 0.6, KW = 1.35, KZ0 = WIN.z1 + 0.62, KZ = KZ0 + KW/2, KX = WX + KD/2, FX = WX + KD;   // FX：門面
+  const KH = RH - 0.01, BASE = 0.08, MID = 2.3;
+  box(KD, KH - BASE, KW, wd, KX, BASE + (KH - BASE)/2, KZ);                         // 櫃體
+  box(KD - 0.04, BASE, KW - 0.04, wdDark, KX - 0.02, BASE/2, KZ);                     // 底座退縮
+  box(0.02, 0.03, KW, wdDark, FX + 0.005, MID, KZ);                                 // 上下段分隔線
+  const dw = KW/3;
+  for (let i = 0; i < 3; i++){
+    const zc = KZ0 + dw*(i + 0.5);
+    if (i) { box(0.012, KH - BASE, 0.008, wdDark, FX + 0.004, BASE + (KH - BASE)/2, KZ0 + dw*i); }   // 門縫
+    // 下段長門：內框細線
+    const y0 = BASE + 0.06, y1 = MID - 0.06, ym = (y0 + y1)/2, ih = y1 - y0, iw = dw - 0.12;
+    for (const [h, w, y, z] of [[0.012, iw, y0, zc], [0.012, iw, y1, zc], [ih, 0.012, ym, zc - iw/2], [ih, 0.012, ym, zc + iw/2]]) box(0.01, h, w, wdDark, FX + 0.006, y, z);
+    if (i === 1) box(0.008, ih - 0.08, iw - 0.06, mirror, FX + 0.006, ym, zc);       // 中間那扇嵌長鏡
+    // 上段小門
+    const u0 = MID + 0.06, u1 = KH - 0.07, um = (u0 + u1)/2;
+    for (const [h, w, y, z] of [[0.012, iw, u0, zc], [0.012, iw, u1, zc], [u1 - u0, 0.012, um, zc - iw/2], [u1 - u0, 0.012, um, zc + iw/2]]) box(0.01, h, w, wdDark, FX + 0.006, y, z);
+    // 黃銅把手與鎖孔：靠門縫那側
+    const hz = i === 0 ? zc + dw/2 - 0.06 : i === 2 ? zc - dw/2 + 0.06 : zc + dw/2 - 0.06;
+    box(0.025, 0.12, 0.018, brass, FX + 0.015, 1.15, hz); box(0.006, 0.03, 0.018, brass, FX + 0.006, 1.02, hz);
+    box(0.022, 0.05, 0.016, brass, FX + 0.013, MID + 0.14, hz);
+  }
+  box(KD + 0.03, 0.04, KW + 0.04, wd, KX + 0.01, KH - 0.02, KZ);                      // 頂端收邊
+}
+
 /* ---------- 前牆：書桌、虎尾蘭、小孩畫的畫；右牆：門、開關 ---------- */
 {
   // 書桌（2026-10-10 依使用者示意圖重做）：淺橡木書桌，桌面上方一座上層書架，右側三個抽屜、中間一個淺抽屜，
