@@ -29,7 +29,7 @@ A specific shore can be opened with a seed in the URL hash, e.g. `index.html#s12
 
 ## Also here
 
-**A slow afternoon** — lying in bed looking up at a turning ceiling fan while afternoon sun comes through the window. Same renderer and palettes. Live: https://kaochieh224.github.io/walk/fan/ (drag to look around; M sound, P palette, O reset view, H hide UI).
+**A slow afternoon** — lying in bed looking up at a turning ceiling fan while afternoon sun comes through the window. Same low-res dithered renderer, in natural colour. Live: https://kaochieh224.github.io/walk/fan/ (drag to turn your head; M sound, O reset view, H hide UI).
 
 ## Files
 
