@@ -15,6 +15,7 @@ Or open `index.html` in a modern browser. It is a single file; three.js loads fr
 | Key | Action |
 | --- | --- |
 | Drag / ← → | Orbit the camera (behind the figure only; recentres after 10 s idle) |
+| Scroll | Zoom in / out (limited range) |
 | O | Reset view |
 | N | New shore (new random seed) |
 | R | Rain on / off (fades in and out) |
@@ -22,7 +23,7 @@ Or open `index.html` in a modern browser. It is a single file; three.js loads fr
 | P | Palette: dusk / rain / night |
 | H | Hide / show the UI (also the button top-right) |
 
-On phones and tablets: drag with one finger to orbit, double-tap to reset the view, and tap the labels bottom-right to toggle rain, sound and palette. Sound starts when you tap *Begin walking*.
+On phones and tablets: drag with one finger to orbit, pinch with two fingers to zoom, double-tap to reset the view, and tap the labels bottom-right to toggle rain, sound and palette. Sound starts when you tap *Begin walking*.
 
 A specific shore can be opened with a seed in the URL hash, e.g. `index.html#s12345`.
 

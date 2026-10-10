@@ -807,20 +807,27 @@ st.uiOn = true;
 function setUI(on){ st.uiOn = on; hudEl.hidden = !on; uiBtn.textContent = on ? 'Hide UI' : 'Show UI'; uiBtn.setAttribute('aria-pressed', String(!on)); }
 uiBtn.addEventListener('click', () => ACT.ui());
 const drag = new Map();
-let lastTap = 0;
+let lastTap = 0, pinchD = 0;
 canvas.addEventListener('pointerdown', e => { if (!st.started) return; resumeAudio();
-  if (e.pointerType === 'touch'){ const now = performance.now(); if (now - lastTap < 300) ACT.reset(); lastTap = now; }   // 手機雙點回正
+  if (e.pointerType === 'touch'){ const now = performance.now();   // 手機雙點回正；第二根手指是捏合，不算雙點
+    if (drag.size) lastTap = 0; else { if (now - lastTap < 300) ACT.reset(); lastTap = now; } }
   drag.set(e.pointerId, { x:e.clientX, y:e.clientY }); canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', e => {
   const d = drag.get(e.pointerId); if (!d) return;
   const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
-  if (drag.size === 1){ cam.orbitT -= dx*0.006; cam.lastIn = performance.now(); }   // 只能繞轉，距離固定
+  if (drag.size === 1){ cam.orbitT -= dx*0.006; cam.lastIn = performance.now(); }   // 單指繞轉
+  else if (drag.size === 2){   // 雙指捏合：張開拉近、捏攏拉遠
+    const [p1, p2] = [...drag.values()], dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    if (pinchD > 0 && dist > 0) cam.zoomT *= pinchD / dist;
+    pinchD = dist; cam.lastIn = performance.now();
+  }
   clampCam();
 });
-const up = e => { drag.delete(e.pointerId); };
+const up = e => { drag.delete(e.pointerId); pinchD = 0; };
 canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('dblclick', () => ACT.reset());
-function clampCam(){ cam.orbitT = THREE.MathUtils.clamp(cam.orbitT, -1.3, 1.3); cam.zoomT = 1; }
+canvas.addEventListener('wheel', e => { if (!st.started) return; e.preventDefault(); cam.zoomT *= Math.exp(e.deltaY*0.0012); clampCam(); }, { passive:false });   // 桌機用滾輪縮放
+function clampCam(){ cam.orbitT = THREE.MathUtils.clamp(cam.orbitT, -1.3, 1.3); cam.zoomT = THREE.MathUtils.clamp(cam.zoomT, 0.3, 1.5); }   // 距離 33～165 公尺，不會無限拉遠
 
 function setPalette(i){
   st.pal = i; const P = PALS[i];
