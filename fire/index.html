@@ -73,7 +73,8 @@ const YAW_SPAN = Math.PI/6;        // 只能看前方 60°（左右各 30°）
 
 /* ---------- 共用噪聲與亂數 ---------- */
 function mulberry(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed); t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14) >>> 0) / 4294967296; }; }
-const R = mulberry(20261014);
+const SEED = (Math.random()*1e9) >>> 0;   // 每次打開都抽一個種子：樹的樣子（還有草、石頭的位置）都不一樣
+const R = mulberry(SEED);
 const ss = THREE.MathUtils.smoothstep, lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
 const hash2 = (x, z) => { const s = Math.sin(x*127.1 + z*311.7)*43758.5453; return s - Math.floor(s); };
 function vn(x, z){ const ix = Math.floor(x), iz = Math.floor(z); let fx = x - ix, fz = z - iz; fx = fx*fx*(3-2*fx); fz = fz*fz*(3-2*fz);
@@ -294,6 +295,7 @@ barkMat.onBeforeCompile = sh => {
 };
 // 樹的資料：每一段枝條（a→b、粗細）、所在群組（0＝樹本身；1～3＝之後會斷掉落地的枝）
 const SEG = [], FALL = [];
+const TILT0 = 0.35 + R()*0.4;   // 大枝張開的角度：小的像窄長的樹，大的像攤開的傘
 const _up = new THREE.Vector3(0, 1, 0);
 function grow(p, dir, len, r, depth, g){
   let cur = p.clone(), d = dir.clone(), rr = r;
@@ -312,18 +314,19 @@ function grow(p, dir, len, r, depth, g){
     for (let k = 0; k < 4; k++){ const td = d.clone().add(new THREE.Vector3((R() - 0.5)*1.4, R()*0.7, (R() - 0.5)*1.4)).normalize(); SEG.push({ a: cur, b: cur.clone().addScaledVector(td, (0.4 + R()*0.4)*TS), r0: rr*0.8, r1: 0.012*TS, g, depth: 5 }); }
     return;
   }
-  const cnt = depth === 0 ? 4 : (R() < 0.45 ? 3 : 4), ref = Math.abs(d.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : _up;
+  const cnt = depth === 0 ? 3 + Math.floor(R()*3) : (R() < 0.45 ? 3 : 4), ref = Math.abs(d.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : _up;
   const perp0 = new THREE.Vector3().crossVectors(d, ref).normalize(), rot0 = R()*6.28;   // 分枝數 3～4：樹枝茂密（使用者 2026-10-14）
   for (let k = 0; k < cnt; k++){
     const perp = perp0.clone().applyAxisAngle(d, rot0 + k*Math.PI*2/cnt + (R() - 0.5)*0.8);
-    const tilt = depth === 0 ? 0.55 + R()*0.3 : 0.45 + R()*0.45;
+    const tilt = depth === 0 ? TILT0 + R()*0.3 : 0.45 + R()*0.45;
     const cd = d.clone().multiplyScalar(Math.cos(tilt)).addScaledVector(perp, Math.sin(tilt)); cd.y += 0.12; cd.normalize();
     let g2 = g;
     if (depth === 1 && FALL.length < 3 && g === 0 && R() < 0.55){ g2 = FALL.length + 1; FALL.push({ g: g2, pivot: cur.clone(), dir: cd.clone() }); }
     grow(cur, cd, len*(0.66 + R()*0.12), Math.max(0.03*TS, rr*0.74), depth + 1, g2);
   }
 }
-grow(TB, new THREE.Vector3(0.08, 1, 0.05).normalize(), 3.7*TS, 0.44*TS, 0, 0);
+// 主幹的傾斜、高度、粗細也隨機
+{ const la = R()*6.28, lean = 0.04 + R()*0.16; grow(TB, new THREE.Vector3(Math.cos(la)*lean, 1, Math.sin(la)*lean).normalize(), (3.0 + R()*1.4)*TS, (0.38 + R()*0.12)*TS, 0, 0); }
 const GROUPS = [new THREE.Group()];   // 群組 0 在世界座標；斷枝群組放在斷點，頂點相對於斷點
 scene.add(GROUPS[0]);
 for (const f of FALL){ const G = new THREE.Group(); G.position.copy(f.pivot); scene.add(G); GROUPS[f.g] = G; f.G = G; }
@@ -429,28 +432,35 @@ const flames = new THREE.Points(particles(11000, pickAny), flameMat); flames.ren
 // 煙：從樹冠升起，往上散開、被風帶走拉成一長條；下緣被火映成橘色
 const smokeMat = new THREE.ShaderMaterial({
   uniforms: FU, transparent: true, depthWrite: false,
-  vertexShader: `attribute vec3 aE; attribute vec4 aR; attribute float aG, aK; uniform float uT, uScale, uFY; uniform vec3 uWind; varying float vA, vH, vI;
+  vertexShader: `attribute vec3 aE; attribute vec4 aR; attribute float aG, aK; uniform float uT, uScale, uFY; uniform vec3 uWind; varying float vA, vH, vI, vS;
     ${GRP_GLSL}
     void main(){
       float gi = grpI(aG), life = 9. + 8.*aR.x, cyc = uT/life + aR.y, age = fract(cyc), id = floor(cyc);
       vec3 j = rnd3(id + 7., aR);
       vec3 base = (grpM(aG) * vec4(aE, 1.)).xyz + vec3(0., 1.5*aK, 0.);
       vec3 p = base + vec3(0., 55.*pow(age, .85)*(.75 + .4*aR.z), 0.) + uWind*pow(age, 1.25)*life*1.6 + j*(2. + 11.*age);
+      // 煙在上升時被亂流捲動：幾層正弦疊出的渦，越高越大
+      float tw = age*life;
+      p += vec3(sin(p.y*.21 + uT*.5 + aR.z*6.) + .5*sin(p.y*.53 - uT*.9 + aR.w*9.), .4*sin(p.x*.3 + uT*.7), cos(p.y*.19 - uT*.4 + aR.x*7.) + .5*cos(p.y*.47 + uT*.8)) * (.8 + 7.*age);
       vec4 mv = modelViewMatrix * vec4(p, 1.);
       gl_Position = projectionMatrix * mv;
-      gl_PointSize = max(1., (4.5 + 17.*pow(age, .8)) * uScale / -mv.z);
-      vA = smoothstep(0., .1, age) * pow(1. - age, 1.4) * (.3 + .7*gi) * (.6 + .4*aR.w); vH = p.y - uFY; vI = gi;
+      gl_PointSize = max(1., (2. + 8.*pow(age, .8)) * uScale / -mv.z);
+      vA = smoothstep(0., .1, age) * pow(1. - age, 1.4) * (.3 + .7*gi) * (.6 + .4*aR.w); vH = p.y - uFY; vI = gi; vS = aR.z*50. + id*7.3 + age*1.5;
     }`,
-  fragmentShader: `uniform vec3 uSmk, uFC; uniform float uFI; varying float vA, vH, vI;
+  fragmentShader: `uniform vec3 uSmk, uFC; uniform float uFI; varying float vA, vH, vI, vS;
     float bh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
+    float bn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(bh(i),bh(i+vec2(1,0)),f.x), mix(bh(i+vec2(0,1)),bh(i+vec2(1,1)),f.x), f.y); }
     void main(){
       vec2 q = gl_PointCoord - .5; float r = length(q)*2.;
-      float a = min(.9, smoothstep(1., .2, r) * vA * 1.25); if (a < .004) discard;
+      // 每團煙有自己的絲縷紋理，慢慢變形，邊緣不是圓的
+      vec2 w = q*4. + vec2(vS, vS*.7);
+      float n = bn(w)*.6 + bn(w*2.1 + 3.)*.3 + bn(w*4.3 - 1.)*.1;
+      float a = min(.85, smoothstep(1., .1, r + (n - .5)*1.1) * (.15 + 1.6*n*n) * vA * 1.5); if (a < .004) discard;
       vec3 c = uSmk * (.75 + .5*(.5 - q.y)) + uFC * exp(-abs(vH)/2.8) * .22 * uFI * vI * (.6 + .8*q.y);
       gl_FragColor = vec4(c, a);
     }`
 });
-const smoke = new THREE.Points(particles(2000, pickTree), smokeMat); smoke.renderOrder = 2; smoke.frustumCulled = false; scene.add(smoke);
+const smoke = new THREE.Points(particles(6000, pickTree), smokeMat); smoke.renderOrder = 2; smoke.frustumCulled = false; scene.add(smoke);
 // 火星：細小的亮點，被熱氣流捲上去、打旋、閃爍、熄掉
 const emberMat = new THREE.ShaderMaterial({
   uniforms: FU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
