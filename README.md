@@ -33,9 +33,12 @@ A specific shore can be opened with a seed in the URL hash, e.g. `index.html#s12
 
 **By the window** — sitting on a chair in a dim second-floor room, facing an aluminium window with an iron grille, looking out at a tree-lined Taiwanese street: banyans and trimmed street trees, cars and taxis stopping at the lights, birds wheeling in the distance, afternoon thunderstorms, dusk and night, and the garbage truck playing *Für Elise* at 7:20 pm. Live: https://kaochieh224.github.io/walk/window/ (drag to look around, look down to lean towards the glass; R rain, T later, M sound, O reset view, H hide UI).
 
+**A tree on fire** — standing in dry wild grassland at dusk, looking at a lone tree burning on a small hill: flames climbing the branches, a leaning smoke plume, sparks, burning grass, and now and then a branch breaking off and falling. Live: https://kaochieh224.github.io/walk/fire/ (drag to look around, scroll / pinch / W S to walk closer; T later, M sound, O look at the tree, H show UI).
+
 ## Files
 
 - `index.html` — the whole experience
 - `visual-spec.md` — visual specification and change log
 - `fan/index.html`, `fan/visual-spec.md` — A slow afternoon
 - `window/index.html`, `window/visual-spec.md` — By the window
+- `fire/index.html`, `fire/visual-spec.md` — A tree on fire
