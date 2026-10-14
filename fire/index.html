@@ -191,6 +191,23 @@ function groundColor(x, z, out){
   return out;
 }
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+// 地面細部：依世界座標疊三層噪聲（大色斑、土塊、碎草屑），細的那層離遠了就淡掉，免得網點閃
+groundMat.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGW = (modelMatrix*vec4(transformed, 1.)).xyz;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW;' + NOISE3)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      { vec2 w = vGW.xz; float near = 1. - smoothstep(12., 70., distance(vGW, cameraPosition));
+        float lum = dot(diffuseColor.rgb, vec3(.33)), live = smoothstep(.06, .16, lum);
+        float b = vn3(vec3(w*.45, 7.)), m = vn3(vec3(w*1.7, 1.)), f = vn3(vec3(w*5.3, 3.)), g = vn3(vec3(w*13., 9.));
+        diffuseColor.rgb *= .8 + .32*b + (.2*(m - .5) + .16*(f - .5)*near)*live;
+        float clod = smoothstep(.62, .82, vn3(vec3(w*2.6 + 4., 2.)));                 // 土塊與凹陷的暗斑
+        diffuseColor.rgb *= 1. - clod*.22*live;
+        float fleck = smoothstep(.78, .9, g) * near * live;                             // 散落的枯草屑
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.6, .5, .32), fleck*.45);
+        float pebble = smoothstep(.86, .93, vn3(vec3(w*9. + 1.7, 6.))) * near;          // 小石子
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.42, .4, .37)*(.7 + .5*f), pebble*.5); }`);
+};
 function terrain(w, d, cx, cz, sx, sz, drop){
   const g = new THREE.PlaneGeometry(w, d, sx, sz).rotateX(-Math.PI/2);
   const p = g.attributes.position, col = new Float32Array(p.count*3);
@@ -206,29 +223,39 @@ function terrain(w, d, cx, cz, sx, sz, drop){
 terrain(300, 300, 0, -50, 300, 300, 0);       // 近處：1 公尺一格
 terrain(5200, 5200, 0, -60, 260, 260, 0.6);   // 遠處：稍微壓低，被近處蓋住
 
-/* ---------- 乾草：一叢叢三片葉，InstancedMesh，在 shader 裡隨風擺 ---------- */
+/* ---------- 乾草：一叢叢細葉加草稈，InstancedMesh，在 shader 裡隨風擺 ---------- */
 const GRASS = [];
 {
+  // 一叢七片細葉（索引幾何：每片 5 個頂點）＋兩根抽穗的枯草稈；gy＝離地高度（根部暗、梢頭淡），gb＝每片葉自己的深淺
   const geos = [];
-  for (let b = 0; b < 5; b++){
-    const a = b*1.25 + R()*0.6, ca = Math.cos(a), sa = Math.sin(a), w = 0.03 + R()*0.025, lx = (R() - 0.5)*0.5, lz = (R() - 0.5)*0.5, hh = 0.7 + R()*0.3;
-    const P = (u, y, k) => [ca*u + lx*k*k, y*hh, sa*u + lz*k*k];
-    const v = [...P(-w, 0, 0), ...P(w, 0, 0), ...P(-w*0.6, 0.5, 0.5), ...P(-w*0.6, 0.5, 0.5), ...P(w, 0, 0), ...P(w*0.6, 0.5, 0.5), ...P(-w*0.6, 0.5, 0.5), ...P(w*0.6, 0.5, 0.5), ...P(0, 1, 1)];
+  const blade = (a, w, hh, lx, lz, shade, tall) => {
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const P = (u, y) => { const k = y*y; return [ca*u + lx*k, y*hh*tall, sa*u + lz*k]; };
+    const v = [...P(-w, 0), ...P(w, 0), ...P(-w*0.65, 0.45), ...P(w*0.65, 0.45), ...P(0, 1)];
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-    const nrm = []; for (let i = 0; i < 9; i++) nrm.push(sa*0.3, 0.9, -ca*0.3); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-    geos.push(g);
-  }
+    g.setIndex([0, 1, 2, 2, 1, 3, 2, 3, 4]);
+    const nrm = []; for (let i = 0; i < 5; i++) nrm.push(sa*0.3, 0.9, -ca*0.3); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('gy', new THREE.Float32BufferAttribute([0, 0, 0.45, 0.45, 1], 1));
+    g.setAttribute('gb', new THREE.Float32BufferAttribute(Array(5).fill(shade), 1));
+    return g;
+  };
+  for (let b = 0; b < 7; b++) geos.push(blade(b*0.9 + R()*0.7, 0.014 + R()*0.012, 0.6 + R()*0.45, (R() - 0.5)*0.38, (R() - 0.5)*0.38, R()*2 - 1, 1));
+  for (let b = 0; b < 2; b++) geos.push(blade(R()*6.3, 0.006, 1, (R() - 0.5)*0.25, (R() - 0.5)*0.25, 0.5 + R()*0.3, 1.35 + R()*0.3));   // 草稈：細、高、偏淡
   const geo = mergeGeometries(geos);
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, side: THREE.DoubleSide });
   mat.onBeforeCompile = sh => {
     sh.uniforms.uT = U.t; sh.uniforms.uW = U.wind; sh.uniforms.uWV = U.windV;
     // 雙面草葉：背面不翻法線（原本背面會變成一片黑）
     sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT, uW; uniform vec3 uWV;').replace('#include <begin_vertex>', `#include <begin_vertex>
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT, uW; uniform vec3 uWV; attribute float gy, gb; varying float vGy, vGb;').replace('#include <begin_vertex>', `#include <begin_vertex>
       { vec3 ip = instanceMatrix[3].xyz; float ph = uT*1.7 - dot(ip.xz, uWV.xz)*.22 + ip.x*.05;
         float k = position.y*position.y, s = (sin(ph)*.55 + sin(ph*2.7 + ip.z)*.2 + .55) * uW;
         vec3 wo = vec3(uWV.x*s*.38, -s*s*.04, uWV.z*s*.38 + cos(ph*1.3)*.05*uW) * k;
-        transformed += inverse(mat3(instanceMatrix)) * wo; }`);
+        transformed += inverse(mat3(instanceMatrix)) * wo; vGy = gy; vGb = gb; }`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGy, vGb;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        diffuseColor.rgb *= mix(.42, 1.06, smoothstep(0., .7, vGy)) * (1. + .14*vGb);              // 根部陰影、每片葉深淺不一
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*vec3(1.12, 1.08, .92) + vec3(.012, .01, .004), smoothstep(.55, 1., vGy)*.3);   // 枯黃的葉梢`);
   };
   const pts = [];
   const tryAdd = (x, z) => {
@@ -237,7 +264,7 @@ const GRASS = [];
     pts.push([x, z, d]);
   };
   const GK = matchMedia('(hover: none)').matches ? 0.55 : 1;   // 手機少一點草
-  for (let i = 0; i < 64000*GK; i++){ const x = (R() - 0.5)*120 + 2, z = 22 - R()*140; tryAdd(x, z); }       // 近處密
+  for (let i = 0; i < 90000*GK; i++){ const x = (R() - 0.5)*120 + 2, z = 22 - R()*140; tryAdd(x, z); }       // 近處密
   for (let i = 0; i < 11000*GK; i++){ const x = (R() - 0.5)*280, z = 60 - R()*290; if (Math.abs(x - 2) < 60 && z > -118 && z < 22) continue; tryAdd(x, z); }
   const inst = new THREE.InstancedMesh(geo, mat, pts.length);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
@@ -245,7 +272,7 @@ const GRASS = [];
     const [x, z, d] = pts[i], scorch = 0;
     const hgt = (0.22 + R()*0.42) * (1 - 0.6*scorch) * (0.7 + 0.6*fbm(x*0.1, z*0.1)) * (0.45 + 0.55*ss(Math.hypot(x, z), 2, 14));   // 腳邊的草矮，才看得到前方
     e.set((R() - 0.5)*0.3, R()*Math.PI*2, (R() - 0.5)*0.3); q.setFromEuler(e);
-    s.set(1.1 + R()*0.8, hgt, 1.1 + R()*0.8); p.set(x, H(x, z) - 0.05, z);
+    s.set(0.85 + R()*0.6, hgt, 0.85 + R()*0.6); p.set(x, H(x, z) - 0.05, z);
     inst.setMatrixAt(i, m4.compose(p, q, s));
     _c.setHSL(0.105 + R()*0.04 - (R() < 0.15 ? 0.04 : 0), 0.24 + R()*0.18, 0.22 + R()*0.12);
     _c.lerp(COL.char, scorch*0.85);
