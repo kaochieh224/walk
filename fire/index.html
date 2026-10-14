@@ -487,17 +487,17 @@ const smokeMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4(c, a);
     }`
 });
-const smoke = new THREE.Points(particles(6000, pickTree), smokeMat); smoke.renderOrder = 2; smoke.frustumCulled = false; scene.add(smoke);
+const smoke = new THREE.Points(particles(6000, pickTree), smokeMat); smoke.renderOrder = 2; smoke.frustumCulled = false; smoke.visible = false; scene.add(smoke);   // 使用者決定不要煙，只留火花（程式保留，改回 true 即可）
 // 火星：細小的亮點，被熱氣流捲上去、打旋、閃爍、熄掉
 const emberMat = new THREE.ShaderMaterial({
   uniforms: FU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `attribute vec3 aE; attribute vec4 aR; attribute float aG, aK; uniform float uT, uScale; uniform vec3 uWind; varying float vA;
     ${GRP_GLSL}
     void main(){
-      float gi = grpI(aG), life = 2.5 + 4.*aR.x, cyc = uT/life + aR.y, age = fract(cyc), id = floor(cyc);
+      float gi = grpI(aG), life = 3. + 5.*aR.x, cyc = uT/life + aR.y, age = fract(cyc), id = floor(cyc);
       vec3 j = rnd3(id + 3., aR);
       vec3 base = (grpM(aG) * vec4(aE + j*1.6, 1.)).xyz;
-      float up = (2.5 + 3.5*aR.z) * age * life * 1.1;
+      float up = (2.5 + 3.5*aR.z) * (age - .25*age*age) * life * 1.2;   // 熱氣流往上推，越高越慢
       vec3 sw = vec3(sin(age*9. + aR.w*30. + j.x*6.), 0., cos(age*7. + aR.z*30.)) * (.6 + 3.*age);
       vec3 p = base + vec3(0., up, 0.) + uWind*age*life*.9 + sw + j*vec3(3., 0., 3.)*age;
       vec4 mv = modelViewMatrix * vec4(p, 1.);
@@ -508,7 +508,7 @@ const emberMat = new THREE.ShaderMaterial({
     }`,
   fragmentShader: `uniform float uFI; varying float vA; void main(){ if (vA < .02) discard; gl_FragColor = vec4(vec3(5., 1.7, .35) * vA * uFI, 1.); }`
 });
-const embers = new THREE.Points(particles(800, pickAny), emberMat); embers.renderOrder = 4; embers.frustumCulled = false; scene.add(embers);
+const embers = new THREE.Points(particles(2600, pickAny), emberMat); embers.renderOrder = 4; embers.frustumCulled = false; scene.add(embers);
 // 斷枝落地時噴起的一陣火星
 const BURST = { t: { value: -100 }, p: { value: new THREE.Vector3() } };
 {
