@@ -439,7 +439,7 @@ for (const s of SEG){
 const TREE_EM = EM.length;
 // 地上一開始不起火（使用者 2026-10-14）：只有斷枝掉下來的地方才會燒
 const GRP = { mats: [0, 1, 2, 3].map(() => new THREE.Matrix4()), gi: [1, 1, 1, 1] };
-const FU = { uT: U.t, uScale: U.scale, uWind: { value: new THREE.Vector3() }, uGrp: { value: GRP.mats }, uGI: { value: GRP.gi }, uFI: { value: 1 }, uFY: { value: TB.y + 7.5*TS }, uSmk: { value: new THREE.Color(0.1, 0.1, 0.1) }, uFC: { value: new THREE.Color(1, 0.45, 0.12) } };
+const FU = { uT: U.t, uScale: U.scale, uWind: { value: new THREE.Vector3() }, uGrp: { value: GRP.mats }, uGI: { value: GRP.gi }, uFI: { value: 1 }, uFY: { value: TB.y + 7.5*TS }, uSmk: { value: new THREE.Color(0.1, 0.1, 0.1) }, uSA: { value: [0, 0, 0, 0] }, uFC: { value: new THREE.Color(1, 0.45, 0.12) } };
 Object.assign(FU, { uW: SW.uW, uWV: SW.uWV, uTB: SW.uTB, uSwH: SW.uSwH, uSwK: SW.uSwK, uOff: SW.uOff });
 const GRP_GLSL = `
   uniform mat4 uGrp[4]; uniform float uGI[4], uSwK[4]; uniform vec3 uOff[4]; uniform float uW, uSwH; uniform vec3 uWV, uTB;
@@ -448,6 +448,9 @@ const GRP_GLSL = `
   ${SWAY_FN}
   vec3 swayG(float g, vec3 lp){ int i = gIdx(g); return swayD(lp + uOff[i])*uSwK[i]; }
   float grpI(float g){ return g < .5 ? uGI[0] : g < 1.5 ? uGI[1] : g < 2.5 ? uGI[2] : uGI[3]; }
+  uniform float uSA[4]; float grpS(float g){ return g < .5 ? uSA[0] : g < 1.5 ? uSA[1] : g < 2.5 ? uSA[2] : uSA[3]; }
+  // 火勢變小時一處一處熄掉（每顆粒子有自己的熄滅門檻），而不是整片一起變淡
+  float alive(float gi, float r){ return smoothstep(r - .06, r + .06, gi*1.12); }
   vec3 rnd3(float id, vec4 r){ return vec3(fract(sin(id*12.9898 + r.z*78.233)*43758.5), fract(sin(id*39.346 + r.w*11.135)*24634.6), fract(sin(id*73.156 + r.x*7.71)*9631.3)) - .5; }`;
 function particles(n, pickEm, extra){
   const aE = new Float32Array(n*3), aR = new Float32Array(n*4), aG = new Float32Array(n), aK = new Float32Array(n);
@@ -474,9 +477,9 @@ const flameMat = new THREE.ShaderMaterial({
       p.x += sin(uT*6.3 + aR.z*30. + age*5.)*.2*age*aK; p.z += cos(uT*5.1 + aR.w*30. + age*4.)*.2*age*aK;
       vec4 mv = modelViewMatrix * vec4(p, 1.);
       gl_Position = projectionMatrix * mv;
-      float sz = aK*(.55 + .6*aR.w) * (1. - .7*age) * smoothstep(0., .14, age) * (.55 + .45*gi);
+      float sz = aK*(.55 + .6*aR.w) * (1. - .7*age) * smoothstep(0., .14, age) * (.8 + .2*gi);
       gl_PointSize = max(1., sz * uScale / -mv.z);
-      vHeat = 1. - age; vA = smoothstep(1., .5, age) * (.4 + .6*gi); vSeed = fract(aR.z + id*.618);
+      vHeat = 1. - age; vA = smoothstep(1., .5, age) * (.75 + .25*gi) * alive(gi, aR.w); vSeed = fract(aR.z + id*.618);
     }`,
   fragmentShader: `uniform float uFI; varying float vA, vHeat, vSeed;
     void main(){
@@ -497,17 +500,17 @@ const smokeMat = new THREE.ShaderMaterial({
   vertexShader: `attribute vec3 aE; attribute vec4 aR; attribute float aG, aK; uniform float uT, uScale, uFY; uniform vec3 uWind; varying float vA, vH, vI, vS;
     ${GRP_GLSL}
     void main(){
-      float gi = grpI(aG), life = 9. + 8.*aR.x, cyc = uT/life + aR.y, age = fract(cyc), id = floor(cyc);
+      float gi = grpI(aG), sa = grpS(aG), life = 10. + 9.*aR.x, cyc = uT/life + aR.y, age = fract(cyc), id = floor(cyc);
       vec3 j = rnd3(id + 7., aR);
       vec3 base = (grpM(aG) * vec4(aE, 1.)).xyz + vec3(0., 1.5*aK, 0.) + swayG(aG, aE);
-      vec3 p = base + vec3(0., 55.*pow(age, .85)*(.75 + .4*aR.z), 0.) + uWind*pow(age, 1.25)*life*1.6 + j*(2. + 11.*age);
+      vec3 p = base + vec3(0., 34.*pow(age, .8)*(.75 + .4*aR.z), 0.) + uWind*pow(age, 1.25)*life*1.6 + j*(.6 + 6.*age);
       // 煙在上升時被亂流捲動：幾層正弦疊出的渦，越高越大
       float tw = age*life;
-      p += vec3(sin(p.y*.21 + uT*.5 + aR.z*6.) + .5*sin(p.y*.53 - uT*.9 + aR.w*9.), .4*sin(p.x*.3 + uT*.7), cos(p.y*.19 - uT*.4 + aR.x*7.) + .5*cos(p.y*.47 + uT*.8)) * (.8 + 7.*age);
+      p += vec3(sin(p.y*.21 + uT*.5 + aR.z*6.) + .5*sin(p.y*.53 - uT*.9 + aR.w*9.), .4*sin(p.x*.3 + uT*.7), cos(p.y*.19 - uT*.4 + aR.x*7.) + .5*cos(p.y*.47 + uT*.8)) * (.4 + 4.5*age);
       vec4 mv = modelViewMatrix * vec4(p, 1.);
       gl_Position = projectionMatrix * mv;
-      gl_PointSize = max(1., (2. + 8.*pow(age, .8)) * uScale / -mv.z);
-      vA = smoothstep(0., .1, age) * pow(1. - age, 1.4) * (.3 + .7*gi) * (.6 + .4*aR.w); vH = p.y - uFY; vI = gi; vS = aR.z*50. + id*7.3 + age*1.5;
+      gl_PointSize = max(1., (.8 + 4.5*pow(age, .8)) * uScale / -mv.z);
+      vA = smoothstep(0., .1, age) * pow(1. - age, 1.6) * smoothstep(aR.x - .1, aR.x + .1, sa*1.1) * sa * (.16 + .24*aR.w);   // 燒完才冒的細白煙：量少、細、一縷一縷 vH = p.y - uFY; vI = gi; vS = aR.z*50. + id*7.3 + age*1.5;
     }`,
   fragmentShader: `uniform vec3 uSmk, uFC; uniform float uFI; varying float vA, vH, vI, vS;
     float bh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
@@ -522,7 +525,7 @@ const smokeMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4(c, a);
     }`
 });
-const smoke = new THREE.Points(particles(6000, pickTree), smokeMat); smoke.renderOrder = 2; smoke.frustumCulled = false; smoke.visible = false; scene.add(smoke);   // 使用者決定不要煙，只留火花（程式保留，改回 true 即可）
+const smoke = new THREE.Points(particles(2600, pickAny), smokeMat); smoke.renderOrder = 2; smoke.frustumCulled = false; scene.add(smoke);   // 燒旺時沒有煙（使用者 2026-10-14）；木頭燒完、火熄了才冒細白煙（uSA）
 // 火星：細小的亮點，被熱氣流捲上去、打旋、閃爍、熄掉
 const emberMat = new THREE.ShaderMaterial({
   uniforms: FU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -539,7 +542,7 @@ const emberMat = new THREE.ShaderMaterial({
       gl_Position = projectionMatrix * mv;
       gl_PointSize = clamp(.07 * uScale / -mv.z, 1., 3.);
       float fl = .55 + .45*sin(uT*(18. + 20.*aR.x) + aR.y*60.);
-      vA = smoothstep(0., .05, age) * smoothstep(1., .55 + .3*aR.w, age) * fl * (.3 + .7*gi);
+      vA = smoothstep(0., .05, age) * smoothstep(1., .55 + .3*aR.w, age) * fl * (.3 + .7*gi) * alive(gi, fract(aR.w*7.3));
     }`,
   fragmentShader: `uniform float uFI; varying float vA; void main(){ if (vA < .02) discard; gl_FragColor = vec4(vec3(5., 1.7, .35) * vA * uFI, 1.); }`
 });
@@ -652,7 +655,7 @@ function sunAt(h){
 }
 
 /* ---------- 狀態與操作 ---------- */
-const st = { started:false, uiOn:false, muted:false, hour: 18.85, nextFall: 50 + R()*40, falls: 0, flare: 0, gust: 0, nextGust: 6 };
+const st = { started:false, uiOn:false, muted:false, hour: 18.85, nextFall: 40 + R()*35, falls: 0, flare: 0, gust: 0, nextGust: 6 };
 // 手機開場就站近一點，離樹約 57 公尺（使用者 2026-10-14 在手機上指定的位置）
 const WALK0 = matchMedia('(hover: none)').matches ? 0.55 : 0;
 const look = { yaw: HOME.yaw, pitch: HOME.pitch, yawT: HOME.yaw, pitchT: HOME.pitch, walk: WALK0, walkT: WALK0, lastIn: 0, ret: null };
@@ -782,12 +785,12 @@ function audioFrame(t, dt, fire, dist){
   const near = clamp(40/dist, 0, 1.6);
   _ar.set(1, 0, 0).applyQuaternion(camera.quaternion); _vp.copy(FIRE_C).sub(camera.position).normalize();
   if (A.firePan.pan) A.firePan.pan.value += (clamp(_vp.dot(_ar)*0.85, -0.85, 0.85) - A.firePan.pan.value)*k;
-  A.fireG.gain.value += (near*0.8 - A.fireG.gain.value)*k;
+  A.fireG.gain.value += (near*0.8*Math.pow(fire.total, 0.8) - A.fireG.gain.value)*k;
   A.roarG.gain.value = 0.42 + 0.25*fire.flick + 0.3*st.flare;
   A.bodyG.gain.value = 0.12 + 0.12*fire.flick + 0.15*st.gust;
   A.bodyF.frequency.value = 380 + 260*fire.flick;
   // 劈啪：泊松過程，火旺時更密；偶爾一聲大的
-  const rate = 9 + 10*fire.flick + 14*st.flare;
+  const rate = (9 + 10*fire.flick + 14*st.flare) * (0.04 + 0.96*fire.total);
   if (A.nextPop < now) A.nextPop = now;
   while (A.nextPop < now + 0.12){
     const big = Math.random() < 0.05, g = big ? 0.6 + Math.random()*0.5 : Math.pow(Math.random(), 2.2)*0.5;
@@ -829,13 +832,14 @@ for (const f of FALL){
   for (const s of mine){
     const w = (s.r0*s.r0 + s.r1*s.r1)*s.a.distanceTo(s.b);
     f.com.addScaledVector(_v1.addVectors(s.a, s.b).multiplyScalar(0.5).sub(f.pivot), w); W += w;
-    const e = s.b.clone().sub(f.pivot); f.L = Math.max(f.L, e.length()); if (s.depth <= 4) ends.push(e);   // 最細的枝梢落地就壓斷，不算碰撞點
+    const e = s.b.clone().sub(f.pivot); f.L = Math.max(f.L, e.length()); ends.push(e); e.k = s.depth <= 3 ? 1 : s.depth === 4 ? 0.15 : 0.03;   // 細枝撐不住重量：碰到地只擋一點，被壓斷、陷進土裡
   }
   f.com.divideScalar(W || 1);
   ends.sort((p, q) => q.length() - p.length());
-  for (const s of mine) if (s.depth <= 3) ends.push(s.a.clone().sub(f.pivot));   // 分岔點也要能碰地
+  for (const s of mine) if (s.depth <= 3){ const e = s.a.clone().sub(f.pivot); e.k = 1; ends.push(e); }   // 分岔點也要能碰地
   const stp = Math.max(1, Math.ceil(ends.length/56));
-  f.pts = [new THREE.Vector3(), ...ends.filter((_, i) => i % stp === 0)];   // 斷口端＋整根枝散開的約五十個碰撞點，枝梢才不會插進土裡
+  f.ends = ends;
+  f.pts = [Object.assign(new THREE.Vector3(), { k: 1 }), ...ends.filter((e, i) => e.k === 1 || i % stp === 0)];   // 斷口端＋整根枝散開的約五十個碰撞點，枝梢才不會插進土裡
   f.Ip = f.L*f.L/12 + 0.4; f.Ia = f.Ip*0.18;     // 細長的棒子：沿軸向的轉動慣量小，容易滾
   f.state = 'on'; f.t0 = 0; f.gi = 1;
 }
@@ -866,18 +870,19 @@ function stepBody(f, h, t){
     const pen = H(wp.x, wp.z) + rad - wp.y; if (pen <= 0) continue;
     touch = true; gN(wp.x, wp.z, n);
     r.copy(wp).sub(f.x);
-    f.x.addScaledVector(n, pen*0.8); G.position.addScaledVector(n, pen*0.8);
+    f.x.addScaledVector(n, pen*0.8*lp.k); G.position.addScaledVector(n, pen*0.8*lp.k);
     const vp = imp.copy(f.w).cross(r).add(f.v), vn = vp.dot(n);
     if (vn >= 0) continue;
     const rn = new THREE.Vector3().crossVectors(r, n), Irn = invI(f, G.quaternion, rn, new THREE.Vector3());
     const K = 1 + n.dot(new THREE.Vector3().crossVectors(Irn, r));
-    const e = vn < -2.5 ? 0.38 : 0.12;                       // 撞得重就彈得起來，慢的時候不再抖
-    const j = -(1 + e)*vn / K;
+    const e = 0.03;                                          // 燒透的枝又重又脆：落地不彈（使用者 2026-10-14）
+    const j = -(1 + e)*vn / K * lp.k;
     f.v.addScaledVector(n, j); f.w.addScaledVector(Irn, j);
+    if (vn < -1){ f.v.x *= 0.45; f.v.z *= 0.45; f.w.multiplyScalar(0.6); }   // 撞擊時枝梢壓碎、吃掉大部分動能，不會在地上滑出去
     // 摩擦：沿地面的滑動被抵掉一部分（庫倫，μ≈0.55）
     const vt = vp.addScaledVector(n, -vn), vtl = vt.length();
     if (vtl > 1e-4){
-      vt.divideScalar(vtl); const jt = Math.min(vtl/K, 0.55*j);
+      vt.divideScalar(vtl); const jt = Math.min(vtl/K, 0.9*j);
       const rt = new THREE.Vector3().crossVectors(r, vt), Irt = invI(f, G.quaternion, rt, new THREE.Vector3());
       f.v.addScaledVector(vt, -jt); f.w.addScaledVector(Irt, -jt);
     }
@@ -886,8 +891,34 @@ function stepBody(f, h, t){
       if (!f.hits++) { sfxCrack(0, true); st.flare = Math.max(st.flare, 0.7); } else st.flare = Math.max(st.flare, 0.35);
     }
   }
-  if (touch){ f.w.multiplyScalar(1 - 1.2*h); f.v.x *= 1 - 0.8*h; f.v.z *= 1 - 0.8*h; }   // 滾動阻力
+  if (touch){
+    // 碰到地：細枝一路被壓斷，整根枝在自身重量下塌平（把主軸往水平扳），同時被土卡住不滾
+    const ax = _v3.copy(f.dir).applyQuaternion(G.quaternion), fl = tmp.set(ax.x, 0, ax.z);
+    if (fl.lengthSq() > 1e-4){ fl.normalize(); f.w.addScaledVector(new THREE.Vector3().crossVectors(ax, fl), 6*h); }
+    f.w.multiplyScalar(Math.max(0, 1 - 3*h)); f.v.x *= Math.max(0, 1 - 4*h); f.v.z *= Math.max(0, 1 - 4*h);
+  }
   return touch;
+}
+function beginSettle(f, t){
+  const G = f.G, q0 = G.quaternion.clone(), ax = new THREE.Vector3().copy(f.dir).applyQuaternion(q0);
+  const hd = new THREE.Vector3(ax.x, 0, ax.z); if (hd.lengthSq() < 1e-4) hd.set(Math.cos(f.g*2.4), 0, Math.sin(f.g*2.4)); hd.normalize();
+  // 倒平後的位置：質心落在現在的位置附近，斷口端與枝梢都貼著地面（順著坡度）
+  const along = f.com.dot(f.dir), c = f.x, P = new THREE.Vector3(c.x - hd.x*along, 0, c.z - hd.z*along);
+  const Lt = f.L*0.8, T = new THREE.Vector3(P.x + hd.x*Lt, 0, P.z + hd.z*Lt);
+  const flat = new THREE.Vector3(hd.x*Lt, H(T.x, T.z) - H(P.x, P.z), hd.z*Lt).normalize();
+  f.p0 = G.position.clone(); f.pr = new THREE.Vector3(P.x, H(P.x, P.z) + 0.1*TS, P.z);
+  // 繞著倒平的主軸試幾個滾轉角，挑分枝最貼地的那個（重的東西會倒向最穩的姿勢）
+  const qf = new THREE.Quaternion().setFromUnitVectors(ax, flat).multiply(q0), qx = new THREE.Quaternion(), qt = new THREE.Quaternion(), w = new THREE.Vector3();
+  let best = 1e9;
+  for (let k = 0; k < 12; k++){
+    qt.copy(qx.setFromAxisAngle(flat, k*Math.PI/6)).multiply(qf); let cost = 0;
+    for (const e of f.ends){ w.copy(e).applyQuaternion(qt).add(f.pr); const d = w.y - H(w.x, w.z); cost += d > 0 ? d*d : 4*d*d; }
+    if (cost < best){ best = cost; f.qr = qt.clone(); }
+  }
+  f.q0 = q0;
+  const ang = ax.angleTo(flat); f.sd = 0.25 + 0.75*Math.min(1, ang/(Math.PI/2));   // 豎得越直，倒下來花越久
+  f.state = 'settle'; f.t0 = t;
+  BURST.t.value = t; BURST.p.value.copy(c); sfxCrack(0, true); st.flare = Math.max(st.flare, 0.5);
 }
 function updateFalls(t, dt){
   for (const f of FALL){
@@ -909,14 +940,22 @@ function updateFalls(t, dt){
       }
       f.gi = 1;
     } else if (f.state === 'falling'){
+      // 空中：剛體自由落下（重力、撕裂時帶的轉動）；一碰到地就進入「塌落」
       const N = 6, h = dt/N; let touch = false;
-      for (let i = 0; i < N; i++) touch = stepBody(f, h, t) || touch;
-      f.rest = touch && f.v.length() < 0.35 && f.w.length() < 0.35 ? f.rest + dt : 0;
-      if (f.rest > 0.5 || t - f.t0 > 14){ f.state = 'down'; f.t0 = t; f.end = G.position.clone(); }
+      for (let i = 0; i < N && !touch; i++) touch = stepBody(f, h, t);
+      if (touch || t - f.t0 > 14) beginSettle(f, t);
       f.gi = 1;
+    } else if (f.state === 'settle'){
+      // 塌落：細枝被壓斷，整根枝以碰地點為支點在自身重量下倒平（越倒越快，u²），最後一聲悶響停住，不彈
+      const u = Math.min(1, (t - f.t0)/f.sd), e = u*u;
+      G.quaternion.slerpQuaternions(f.q0, f.qr, e); G.position.lerpVectors(f.p0, f.pr, e);
+      if (u >= 1){ f.state = 'down'; f.t0 = t; f.end = f.pr.clone(); BURST.t.value = t; BURST.p.value.copy(f.pr); sfxCrack(0, true); st.flare = Math.max(st.flare, 0.6); }
+      f.gi = 1;
+    } else if (f.state === 'on'){
+      f.gi = st.gi0 ?? 1;   // 還連在樹上：跟著整棵樹一起燒完
     } else if (f.state === 'down'){
       const u = Math.max(0, t - f.t0); G.position.copy(f.end); G.position.y -= Math.min(0.04*TS, u*0.015);
-      f.gi = lerp(0.85, 0.3, ss(u, 0, 160));   // 落地後火慢慢變小
+      f.gi = lerp(0.85, 0, ss(u, 0, 150));   // 落地後木頭慢慢燒完
     }
     G.updateMatrixWorld(true);
     GRP.mats[f.g].copy(G.matrixWorld); GRP.gi[f.g] = f.gi;
@@ -926,7 +965,9 @@ function updateFalls(t, dt){
 /* ---------- 主迴圈 ---------- */
 let last = performance.now(); const T0 = last;
 const _gc = new THREE.Color(), _zc = new THREE.Color(), _hc = new THREE.Color(), _fp = new THREE.Vector3();
-const fire = { flick: 0.5 };
+const fire = { flick: 0.5, total: 1 };
+const BURN_A = 120, BURN_B = 330;   // 秒：開始變小、完全熄掉
+const SA = FU.uSA.value;
 function frame(now){
   const dt = clamp((now - last)/1000, 0, 0.05); last = now;
   const t = (now - T0)/1000; tNow = t;
@@ -952,13 +993,23 @@ function frame(now){
   const flick = 0.5 + 0.22*Math.sin(t*7.3) * Math.sin(t*2.9 + 1) + 0.14*Math.sin(t*13.7 + 2) + 0.12*(vn(t*3.1, 0.5) - 0.5)*2;
   fire.flick = clamp(flick, 0, 1);
   FU.uFI.value = 0.85 + 0.3*fire.flick + 0.5*st.flare;
-  if (st.started && t > st.nextFall){ if (startFall(t)) st.falls++; st.nextFall = t + 110 + R()*120; }
+  if (st.started && t > st.nextFall){ if (startFall(t)) st.falls++; st.nextFall = t + 45 + R()*60; }
+  // 燒完：樹先旺燒約兩分鐘，接著一處一處熄掉，約五分半鐘後只剩樹皮裂縫的炭火，這時才冒出細細的白煙，之後白煙慢慢變少、留一縷
+  if (st.started && st.s0 == null) st.s0 = t;
+  const bs = st.s0 == null ? 0 : t - st.s0;
+  st.gi0 = 1 - ss(bs, BURN_A, BURN_B);
+  if (st.gi0 < 0.5) st.nextFall = Infinity;   // 火小了就不再斷枝
   updateFalls(t, dt);
-  GRP.mats[0].identity(); GRP.gi[0] = 1;
-  fireLight.intensity = (150 + 90*fire.flick + 160*st.flare)*TS*TS * (1 + 0.15*Math.sin(t*23 + Math.sin(t*5)));
+  GRP.mats[0].identity(); GRP.gi[0] = st.gi0;
+  const smokeOf = (gi, u) => ss(1 - gi, 0.6, 0.97) * (1 - 0.7*ss(u, 150, 480));
+  SA[0] = smokeOf(st.gi0, bs - BURN_B);
+  let FT = st.gi0;
+  for (const f of FALL){ SA[f.g] = f.state === 'down' ? smokeOf(f.gi, t - f.t0 - 150) : SA[0]; if (f.state === 'down') FT += f.gi*0.25; }
+  fire.total = FT = clamp(FT, 0, 1);
+  fireLight.intensity = (150 + 90*fire.flick + 160*st.flare)*TS*TS * (1 + 0.15*Math.sin(t*23 + Math.sin(t*5))) * (0.03 + 0.97*FT);
   fireLight.position.set(FIRE_C.x + Math.sin(t*3.1)*0.6 + U.windV.value.x*wind*1.5, FIRE_C.y + Math.sin(t*4.3)*0.5, FIRE_C.z + Math.cos(t*2.7)*0.6);
-  lowFire.intensity = (26 + 18*fire.flick)*TS*TS;
-  EMB.k.value = 0.8 + 0.4*fire.flick;
+  lowFire.intensity = (26 + 18*fire.flick)*TS*TS * Math.max(FT, 0.12*(1 - ss(bs, BURN_B, BURN_B + 500)));   // 熄火後炭火還映著一點紅
+  EMB.k.value = (0.8 + 0.4*fire.flick) * Math.max(st.gi0, 0.45*(1 - 0.75*ss(bs, BURN_B, BURN_B + 600)));
 
   // 光與天色
   sun.color.copy(SKY.sunC);
@@ -970,7 +1021,7 @@ function frame(now){
   skyMat.uniforms.uSun.value.copy(toSun); skyMat.uniforms.uSunC.value.copy(SKY.sunC); skyMat.uniforms.uNight.value = night;
   scene.fog.color.copy(hor).multiplyScalar(0.92);
   // 煙的顏色：白天是灰褐的煙，夜裡幾乎是黑的
-  FU.uSmk.value.setRGB(0.04, 0.034, 0.03).lerp(_gc.copy(hor).multiplyScalar(0.42), 0.7*(1 - 0.6*night));   // 煙帶一點天色：純灰在紫色天空前會被看成綠
+  FU.uSmk.value.setRGB(0.2, 0.2, 0.21).lerp(_gc.copy(hor).multiplyScalar(0.85), 0.45);   // 白煙帶一點天色：純灰在紫色天空前會被看成綠
   FU.uFC.value.setRGB(1.0, 0.42, 0.1).multiplyScalar(0.6 + 0.9*night);
 
   // 鏡頭：拖曳轉頭；往前走時沿著到土坡的直線，眼睛跟著地形高低
@@ -1007,7 +1058,7 @@ function frame(now){
   const vis = _fp.z < 1 && Math.abs(_fp.x) < 2 && Math.abs(_fp.y) < 2.5 ? 1 : 0;
   post.uniforms.uFire.value.set(_fp.x*0.5 + 0.5, _fp.y*0.5 + 0.5, vis);
   post.uniforms.uFireR.value.set(pe[0]*0.5*4.2*TS/dz, pe[5]*0.5*4.2*TS/dz);
-  post.uniforms.uHaze.value = 0.8 + 0.4*fire.flick;
+  post.uniforms.uHaze.value = (0.8 + 0.4*fire.flick) * fire.total;
   post.uniforms.uT.value = t;
   post.uniforms.uExp.value = 1.25 + 0.75*night;
   post.uniforms.uFlash.value = st.flare*0.03*night;
