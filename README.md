@@ -35,6 +35,8 @@ A specific shore can be opened with a seed in the URL hash, e.g. `index.html#s12
 
 **A tree on fire** — standing in dry wild grassland in the blue hour after sunset, looking at a lone tree burning on a small hill: flames climbing the branches, sparks rising straight up on the heat in still air, a few burnt branches snapping off and thudding onto the slope, until the fire slowly dies and only thin white smoke rises from the charred tree. Live: https://kaochieh224.github.io/walk/fire/ (drag to look around, scroll / pinch / W S to walk closer; M sound, O look at the tree, H show UI).
 
+**Upside down** — someone holding a handstand in a grassy slope of small yellow flowers under an overcast sky, black work boots up, baggy navy cargo pants, a brown T-shirt slipping down to the chest, a maroon bucket hat lying in the grass. Shake your phone left and right and they lose balance, legs swinging to find their centre; stop and they settle back. Live: https://kaochieh224.github.io/walk/handstand/ (phone: shake; desktop: drag left and right, ← → or A D to push, space to shove; M sound, H show UI). Figure based on [Male Base Mesh](https://github.com/BoQsc/Godot-3D-Male-Base-Mesh) by orange-juice-games (CC0 1.0), clothes and pose built in code.
+
 ## Files
 
 - `index.html` — the whole experience

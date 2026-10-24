@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Upside down</title>
+<meta property="og:title" content="Upside down">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+/* 介面：與〈An endless coast〉〈A tree on fire〉同一套。Instrument Serif，字一律白色，細線分隔，不加卡片 */
+:root{
+  --ink:#1a1b18;
+  --ui:#ffffff;
+  --ui-dim:rgba(255,255,255,.62);
+  --rule:rgba(255,255,255,.45);
+  --serif:"Instrument Serif","Times New Roman",serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(--ui);font-family:var(--serif)}
+#c{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);image-rendering:pixelated;image-rendering:crisp-edges;display:block;touch-action:none;cursor:ew-resize}
+.hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:flex-end;align-items:flex-end;gap:24px;padding-inline:28px;text-shadow:0 0 2px rgba(0,0,0,.45),0 1px 12px rgba(0,0,0,.5)}
+.hud.bottom{bottom:0;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+.keys{display:flex;flex-direction:column;align-items:stretch;gap:2px;font-size:16px;line-height:1.35}
+button.k{display:grid;grid-template-columns:2em 1fr;column-gap:14px;align-items:center;text-align:left}
+.keys b{font-weight:400;letter-spacing:.14em;font-size:12px;text-align:right;color:var(--ui-dim)}
+.keys i{font-style:italic}
+.keys .off{color:var(--ui-dim)}
+button.k{pointer-events:auto;font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;text-shadow:inherit}
+button.k:hover i{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+button.k:focus-visible{outline:1px solid var(--ui);outline-offset:2px}
+#uiBtn{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:calc(20px + env(safe-area-inset-right,0px));font:inherit;font-style:italic;font-size:16px;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--rule);padding:6px 0 3px;cursor:pointer;text-shadow:0 0 2px rgba(0,0,0,.45),0 1px 12px rgba(0,0,0,.5);opacity:.85;-webkit-tap-highlight-color:transparent}
+#uiBtn:hover{opacity:1}
+#uiBtn:focus-visible{outline:1px solid var(--ui);outline-offset:4px}
+#hint{position:fixed;left:0;right:0;bottom:calc(30px + env(safe-area-inset-bottom,0px));text-align:center;font-style:italic;font-size:19px;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.45),0 1px 12px rgba(0,0,0,.5);transition:opacity 1.6s;opacity:0}
+#hint.on{opacity:.92}
+#intro{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;gap:14px;padding:0 28px calc(56px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(14,15,12,.7),rgba(14,15,12,.2) 50%,rgba(14,15,12,0) 75%);transition:opacity 1.6s}
+#intro.gone{opacity:0;pointer-events:none}
+#start{font:inherit;font-size:22px;color:var(--ui);background:none;border:0;border-bottom:1px solid var(--ui);padding:0 0 4px;cursor:pointer;letter-spacing:.02em}
+#start span{display:inline-block;transition:transform .3s}
+#start:hover span{transform:translateX(6px)}
+#start:focus-visible{outline:1px solid var(--ui);outline-offset:6px}
+#credit{font-size:13px;color:var(--ui-dim);font-style:italic;max-width:30em;line-height:1.4}
+#credit a{color:inherit}
+@media (max-width:560px){.hud{padding-inline:16px;gap:12px}#intro{padding-inline:16px}.keys{font-size:15px}#uiBtn{right:calc(16px + env(safe-area-inset-right,0px))}}
+@media (hover:none){.keys{gap:8px;font-size:19px;align-items:flex-end}.keys b{display:none}button.k{display:flex;justify-content:center;min-width:132px;min-height:46px;padding:0 18px;box-sizing:border-box;border:1px solid var(--rule);background:rgba(10,9,6,.28)}button.k:active{background:rgba(255,255,255,.18)}#uiBtn{font-size:18px;min-height:44px;padding:0 16px;border:1px solid var(--rule);background:rgba(10,9,6,.28);touch-action:manipulation}}
+@media (prefers-reduced-motion:reduce){#intro,#hint{transition:none}#start span{transition:none}}
+</style>
+
+<canvas id="c" aria-label="A person doing a handstand in a grassy field of small yellow flowers under an overcast sky, a maroon bucket hat lying in the grass beside them"></canvas>
+<div class="hud bottom" id="hud" hidden>
+  <div class="keys" id="keys"></div>
+</div>
+<button id="uiBtn" type="button" hidden>Hide UI</button>
+<div id="hint"></div>
+<div id="intro">
+  <button id="start" type="button">Hold the handstand <span>&rarr;</span></button>
+  <div id="credit">Figure based on <a href="https://github.com/BoQsc/Godot-3D-Male-Base-Mesh" target="_blank" rel="noopener">Male Base Mesh</a> by orange-juice-games (CC0 1.0).</div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+/* ---------- 參數 ---------- */
+const BASE_H = 540;   // 內部解析度與其他場景相同：點陣顆粒一樣大
+const MOBILE = matchMedia('(hover: none)').matches;
+const FIG_H = 1.74;   // 人的身高（公尺）
+
+/* ---------- 共用噪聲與亂數 ---------- */
+function mulberry(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed); t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14) >>> 0) / 4294967296; }; }
+const R = mulberry(20261024);
+const ss = THREE.MathUtils.smoothstep, lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
+const hash2 = (x, z) => { const s = Math.sin(x*127.1 + z*311.7)*43758.5453; return s - Math.floor(s); };
+function vn(x, z){ const ix = Math.floor(x), iz = Math.floor(z); let fx = x - ix, fz = z - iz; fx = fx*fx*(3-2*fx); fz = fz*fz*(3-2*fz);
+  const a = hash2(ix, iz), b = hash2(ix+1, iz), c = hash2(ix, iz+1), d = hash2(ix+1, iz+1); return a + (b-a)*fx + (c-a)*fz + (a-b-c+d)*fx*fz; }
+const fbm = (x, z) => vn(x, z)*0.5 + vn(x*2.03 + 5.1, z*2.03 - 3.7)*0.25 + vn(x*4.1 - 9.3, z*4.1 + 1.3)*0.125 + vn(x*8.3 + 2.2, z*8.3 + 7.7)*0.0625;
+
+// 地形：人倒立的地方平緩，往後是一面慢慢升高的草坡，坡頂之後就是天
+function H(x, z){
+  const u = -z;
+  let h = 10.5*ss(u, 2, 44) + 1.2*ss(u, 30, 70);
+  h += (fbm(x*0.05 + 3, z*0.05 + 7) - 0.5)*1.4*ss(u, 4, 30);
+  h += (fbm(x*0.4, z*0.4) - 0.5)*0.08;
+  h -= 2.5*ss(u, 80, 140);
+  return h;
+}
+
+/* ---------- 渲染器：低解析 render target → 自然色 + Bayer 網點（與吊扇、窗邊、火同一條管線） ---------- */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:false, powerPreference:'high-performance' });
+renderer.setPixelRatio(1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const rt = new THREE.WebGLRenderTarget(4, 4, { minFilter:THREE.NearestFilter, magFilter:THREE.NearestFilter, type:THREE.HalfFloatType });
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xd9dcd6, 30, 190);
+const camera = new THREE.PerspectiveCamera(36, 1, 0.05, 3000);
+camera.rotation.order = 'YXZ';
+
+const post = new THREE.ShaderMaterial({
+  uniforms:{ tScene:{ value: rt.texture }, uT:{ value: 0 }, uExp:{ value: 1.0 } },
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
+  fragmentShader:`
+    uniform sampler2D tScene; uniform float uT, uExp; varying vec2 vUv;
+    float bayer2(vec2 a){ a=floor(a); return fract(dot(a, vec2(.5, a.y*.75))); }
+    float bayer4(vec2 a){ return bayer2(.5*a)*.25 + bayer2(a); }
+    float bh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
+    float bn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(bh(i),bh(i+vec2(1,0)),f.x), mix(bh(i+vec2(0,1)),bh(i+vec2(1,1)),f.x), f.y); }
+    vec3 aces(vec3 x){ return clamp((x*(2.51*x + .03)) / (x*(2.43*x + .59) + .14), 0., 1.); }
+    void main(){
+      vec3 c = texture2D(tScene, vUv).rgb * uExp;
+      // 陰天的底片感：亮部略偏暖、暗部略偏青，飽和度收一點
+      float l = dot(c, vec3(.2126, .7152, .0722));
+      c = mix(vec3(l), c, .86) * mix(vec3(.95, 1., 1.03), vec3(1.03, 1.01, .96), smoothstep(.05, .7, l));
+      vec2 q = vUv - .5; c *= 1. - dot(q, q) * .5;              // 鏡頭暗角
+      // 網點被空氣輕輕推動（與其他場景相同）
+      vec2 fp = gl_FragCoord.xy / 70.;
+      vec2 off = (vec2(bn(fp + vec2(uT * .03, uT * .01)), bn(fp * 1.3 + vec2(5.2, uT * .024))) - .5) * 3.;
+      float b = bayer4(gl_FragCoord.xy + floor(off));
+      b = fract(b + (bn(gl_FragCoord.xy * .12 + vec2(uT * .25, -uT * .18)) - .5) * .08);
+      // 只用自然色：曝光 → ACES → sRGB → 每個色版用 4×4 Bayer 網點量化成 7 階
+      vec3 g = pow(aces(c), vec3(1./2.2));
+      gl_FragColor = vec4(clamp(floor(g * 6. + b) / 6., 0., 1.), 1.);
+    }`,
+  depthTest:false, depthWrite:false
+});
+const postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), post));
+
+const U = { t:{ value: 0 }, wind:{ value: 0.35 }, windV:{ value: new THREE.Vector3(1, 0, -0.3).normalize() } };
+let RWID = 4, RHGT = 4;
+// 鏡頭：蹲低在人前方約 4.6 公尺，微微仰拍；直式畫面（手機）跟參考照片一樣，人從靴子到手占滿大半個畫面
+const CAM = { pos: new THREE.Vector3(0.05, 0.85, 3.95), look: new THREE.Vector3(0, 1.12, 0) };
+function resize(){
+  const W = innerWidth, H_ = innerHeight, dpr = Math.min(devicePixelRatio || 1, 3), DW = W*dpr, DH = H_*dpr;
+  const SCALE = Math.max(2, Math.round(Math.max(DW, DH) / (BASE_H*16/9)));
+  RWID = Math.ceil(DW / SCALE); RHGT = Math.ceil(DH / SCALE);
+  renderer.setSize(RWID, RHGT, false);
+  canvas.style.width = RWID*SCALE/dpr + 'px'; canvas.style.height = RHGT*SCALE/dpr + 'px';
+  rt.setSize(RWID, RHGT);
+  camera.aspect = RWID / RHGT;
+  const a = camera.aspect;
+  // 直式：垂直視角約 44～50°（跟參考照片一樣人占滿大半個畫面）；橫式：垂直 44°，左右看得到更多草坡和帽子
+  camera.fov = a >= 1 ? 44 : Math.min(50, 44 * Math.max(1, 0.5/a));
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ---------- GLSL 小工具 ---------- */
+const NOISE3 = `
+  float h3(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+  float vn3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3. - 2.*f);
+    return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }`;
+
+/* ---------- 地面：頂點色畫出近處的綠草地、遠處坡上一片油菜花般的黃綠 ---------- */
+const C = (h) => new THREE.Color(h);
+const COL = { green: C(0x56693a), green2: C(0x6c7c44), olive: C(0x7a8040), yellow: C(0xa9a640), dirt: C(0x5a5136) };
+const _c = new THREE.Color();
+// 黃花的密度：坡上越遠越密，中間夾著幾片綠的空隙（參考照片：遠處整片黃，近處稀疏）
+const flowerD = (x, z) => clamp(ss(-z, 3, 26)*0.85 + (fbm(x*0.07 + 4, z*0.07 - 2) - 0.45)*1.3, 0, 1) * (1 - 0.55*ss(fbm(x*0.03 - 7, z*0.05 + 3), 0.55, 0.7));
+function groundColor(x, z, out){
+  const n = fbm(x*0.08 + 11, z*0.08 - 4), n2 = fbm(x*0.3, z*0.3);
+  out.copy(COL.green).lerp(COL.green2, ss(n2, 0.3, 0.75)).lerp(COL.olive, ss(n, 0.45, 0.75)*0.6);
+  out.lerp(COL.yellow, flowerD(x, z)*0.75);
+  out.lerp(COL.dirt, (1 - ss(Math.hypot(x, z*1.4), 0.25, 0.9))*0.55);   // 手撐的地方草被壓扁，露一點土
+  return out;
+}
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+groundMat.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGW = (modelMatrix*vec4(transformed, 1.)).xyz;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW;' + NOISE3)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      { vec2 w = vGW.xz; float near = 1. - smoothstep(8., 50., distance(vGW, cameraPosition));
+        float b = vn3(vec3(w*.6, 7.)), m = vn3(vec3(w*2.1, 1.)), f = vn3(vec3(w*6.3, 3.)), g = vn3(vec3(w*15., 9.));
+        diffuseColor.rgb *= .82 + .3*b + (.22*(m - .5) + .2*(f - .5))*near;
+        float fl = smoothstep(.72, .86, g) * (.35 + .65*smoothstep(-6., -30., vGW.z));   // 地上散落的小黃點
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.72, .66, .16), fl*.3); }`);
+};
+function terrain(w, d, cx, cz, sx, sz){
+  const g = new THREE.PlaneGeometry(w, d, sx, sz).rotateX(-Math.PI/2);
+  const p = g.attributes.position, col = new Float32Array(p.count*3);
+  for (let i = 0; i < p.count; i++){
+    const x = p.getX(i) + cx, z = p.getZ(i) + cz;
+    p.setXYZ(i, x, H(x, z), z);
+    groundColor(x, z, _c);
+    col[i*3] = _c.r; col[i*3+1] = _c.g; col[i*3+2] = _c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, groundMat); m.receiveShadow = true; scene.add(m); return m;
+}
+terrain(70, 90, 0, -30, 140, 180);       // 近處：0.5 公尺一格
+terrain(900, 900, 0, -200, 150, 150).position.y = -0.08;
+
+/* ---------- 草與黃花：InstancedMesh，在 shader 裡隨風輕擺 ---------- */
+// 共用的風擺：越高擺越大，陣風在草坡上一波波滾過去
+const SWAY = `
+  { vec3 ip = instanceMatrix[3].xyz; float ph = uT*1.6 - dot(ip.xz, uWV.xz)*.35 + ip.x*.07;
+    float k = position.y*position.y, band = .55 + .45*sin(dot(ip.xz, uWV.xz)*.12 - uT*.9 + sin(ip.x*.05 - ip.z*.07)*2.);
+    float s = (sin(ph)*.6 + sin(ph*2.3 + ip.z)*.25 + .3) * uW * (.4 + .9*band);
+    vec3 wo = vec3(uWV.x*s*.22, -s*s*.02, uWV.z*s*.22 + cos(ph*1.3)*.03*uW) * k;
+    transformed += inverse(mat3(instanceMatrix)) * wo; }`;
+function swayMat(extraFrag){
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, side: THREE.DoubleSide, vertexColors: true });
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uT = U.t; sh.uniforms.uW = U.wind; sh.uniforms.uWV = U.windV;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT, uW; uniform vec3 uWV; attribute float gy; varying float vGy;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAY + '\nvGy = gy;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGy;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + extraFrag);
+  };
+  return mat;
+}
+function blade(a, w, hh, lx, lz, shade, col){
+  const ca = Math.cos(a), sa = Math.sin(a);
+  const P = (u, y) => { const k = y*y; return [ca*u + lx*k, y*hh, sa*u + lz*k]; };
+  const v = [...P(-w, 0), ...P(w, 0), ...P(-w*0.6, 0.5), ...P(w*0.6, 0.5), ...P(0, 1)];
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex([0, 1, 2, 2, 1, 3, 2, 3, 4]);
+  const nrm = []; for (let i = 0; i < 5; i++) nrm.push(sa*0.3, 0.9, -ca*0.3); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('gy', new THREE.Float32BufferAttribute([0, 0, 0.5*hh, 0.5*hh, hh], 1));
+  const c = []; for (let i = 0; i < 5; i++) c.push(col.r*shade, col.g*shade, col.b*shade); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+  return g;
+}
+function scatter(geo, mat, pts, colorFn, shadows){
+  const inst = new THREE.InstancedMesh(geo, mat, pts.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
+  for (let i = 0; i < pts.length; i++){
+    const [x, z, hgt] = pts[i];
+    e.set((R() - 0.5)*0.25, R()*Math.PI*2, (R() - 0.5)*0.25); q.setFromEuler(e);
+    s.set(0.8 + R()*0.5, hgt, 0.8 + R()*0.5); p.set(x, H(x, z) - 0.03, z);
+    inst.setMatrixAt(i, m4.compose(p, q, s));
+    inst.setColorAt(i, colorFn(x, z, _c));
+  }
+  inst.receiveShadow = true; inst.castShadow = !!shadows; inst.frustumCulled = false; scene.add(inst); return inst;
+}
+const GK = (MOBILE ? 0.55 : 1) * (/lite/.test(location.search) ? 0.12 : 1);   // ?lite：測試用，少畫一點草
+const nearHands = (x, z) => Math.hypot(x*0.9, z*1.5);
+// 綠草：每叢八片細長葉
+{
+  const g = new THREE.Color(1, 1, 1), geos = [];
+  for (let b = 0; b < 8; b++) geos.push(blade(b*0.8 + R()*0.8, 0.008 + R()*0.008, 0.65 + R()*0.45, (R() - 0.5)*0.4, (R() - 0.5)*0.4, 0.75 + R()*0.45, g));
+  const geo = mergeGeometries(geos);
+  const mat = swayMat(`diffuseColor.rgb *= mix(.4, .95, smoothstep(0., .55, vGy));`);
+  const pts = [];
+  for (let i = 0; i < 70000*GK; i++){
+    const x = (R() - 0.5)*36, z = 4.2 - Math.pow(R(), 0.8)*52;
+    const nh = nearHands(x, z); if (nh < 0.3 + R()*0.3) continue;
+    const tall = (0.3 + R()*0.38) * (0.75 + 0.5*fbm(x*0.3, z*0.3)) * (0.4 + 0.6*ss(nh, 0.3, 1.8)) * (1 - 0.45*ss(z, 1.2, 3.6));   // 手邊的草矮一點，鏡頭前的高
+    pts.push([x, z, tall]);
+  }
+  scatter(geo, mat, pts, (x, z, c) => c.setHSL(0.21 + R()*0.05, 0.3 + R()*0.14, 0.17 + R()*0.07).lerp(COL.yellow, flowerD(x, z)*0.2));
+}
+// 黃色小花（芥菜花）：細長的莖，頂端一簇小黃花苞
+{
+  const STEM = new THREE.Color(0x5f7536), PET = new THREE.Color(0xe8d230), PET2 = new THREE.Color(0xd8c41c);
+  const geos = [];
+  geos.push(blade(0, 0.004, 1, 0.04, 0.02, 1, STEM));
+  for (let b = 0; b < 2; b++) geos.push(blade(R()*6.3, 0.003, 0.7, (R() - 0.5)*0.3, (R() - 0.5)*0.3, 1, STEM));
+  for (let k = 0; k < 9; k++){
+    const a = R()*6.3, r = 0.012 + R()*0.035, y = 0.84 + R()*0.17, sz = 0.006 + R()*0.006;
+    const f = new THREE.OctahedronGeometry(sz, 0); f.deleteAttribute('uv');
+    f.translate(Math.cos(a)*r + 0.04*y*y, y, Math.sin(a)*r + 0.02*y*y);
+    const n = f.attributes.position.count, cc = R() < 0.5 ? PET : PET2, col = [];
+    for (let i = 0; i < n; i++) col.push(cc.r, cc.g, cc.b);
+    f.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const gy = []; for (let i = 0; i < n; i++) gy.push(1); f.setAttribute('gy', new THREE.Float32BufferAttribute(gy, 1));
+    f.setIndex([...Array(n).keys()]);
+    geos.push(f);
+  }
+  for (const gg of geos) if (!gg.index) gg.setIndex([...Array(gg.attributes.position.count).keys()]);
+  const geo = mergeGeometries(geos);
+  const mat = swayMat(`diffuseColor.rgb *= mix(.55, 1., smoothstep(0., .6, vGy));`);
+  const pts = [];
+  for (let i = 0; i < 52000*GK; i++){
+    const x = (R() - 0.5)*44, z = 4.2 - Math.pow(R(), 0.75)*60;
+    if (R() > flowerD(x, z)*0.9 + 0.1) continue;
+    const nh = nearHands(x, z); if (nh < 0.5) continue;
+    pts.push([x, z, (0.45 + R()*0.45) * (0.6 + 0.4*ss(nh, 0.5, 2)) * (1 - 0.35*ss(z, 1.2, 3.6))]);
+  }
+  scatter(geo, mat, pts, (x, z, c) => c.setScalar(0.85 + R()*0.3));
+}
+
+/* ---------- 天空：陰天，灰白、低垂的雲層 ---------- */
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: { uT: U.t, uZen:{ value: new THREE.Color(0.83, 0.85, 0.85) }, uHor:{ value: new THREE.Color(0.95, 0.95, 0.93) } },
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: `varying vec3 vD; void main(){ vD = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.); gl_Position = p.xyww; }`,
+  fragmentShader: `uniform vec3 uZen, uHor; uniform float uT; varying vec3 vD;
+    float bh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
+    float bn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(bh(i),bh(i+vec2(1,0)),f.x), mix(bh(i+vec2(0,1)),bh(i+vec2(1,1)),f.x), f.y); }
+    float fbm(vec2 p){ return bn(p)*.5 + bn(p*2.03 + 3.1)*.25 + bn(p*4.1 - 1.7)*.125 + bn(p*8.2 + 5.3)*.0625; }
+    void main(){
+      vec3 d = normalize(vD); float h = d.y;
+      vec3 c = mix(uHor, uZen, pow(clamp(h, 0., 1.), .6));
+      // 雲層：一整片的灰白，有幾處較暗、較厚的雲慢慢飄
+      vec2 cp = d.xz / (h + .12) * .7 + vec2(uT*.004, uT*.0015);
+      float cl = fbm(cp*1.2), cl2 = fbm(cp*3.1 + 7.);
+      c *= 1. - (smoothstep(.45, .8, cl)*.12 + (cl2 - .5)*.05) * smoothstep(.0, .15, h);
+      c += vec3(.03, .03, .025) * smoothstep(.6, .3, cl) * smoothstep(.05, .4, h);
+      gl_FragColor = vec4(c * 1.55, 1.);
+    }`
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(2600, 32, 16), skyMat); sky.renderOrder = -1; scene.add(sky);
+
+/* ---------- 光：陰天的天光為主，一盞很弱的頂光讓人有一點影子 ---------- */
+const hemi = new THREE.HemisphereLight(0xe8ecee, 0x4a5530, 1.45); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xf2efe6, 0.75);
+sun.position.set(-3, 12, 4); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left:-3.5, right:3.5, top:3.5, bottom:-3.5, near:1, far:30 });
+sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03; sun.shadow.radius = 6;
+scene.add(sun, sun.target);
+
+/* ---------- 酒紅色漁夫帽：掉在右邊的草裡，帽繩垂下 ---------- */
+const hat = new THREE.Group();
+{
+  const red = new THREE.MeshStandardMaterial({ color: 0x5e1220, roughness: 0.95, side: THREE.DoubleSide });
+  const prof = [[0.0, 0.088], [0.07, 0.09], [0.083, 0.083], [0.088, 0.065], [0.095, 0.0], [0.1, -0.006], [0.135, -0.03], [0.162, -0.048], [0.165, -0.054]];
+  const lat = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 28);
+  // 布料不平整：讓帽子有一點塌、一點皺
+  const p = lat.attributes.position;
+  for (let i = 0; i < p.count; i++){ const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x);
+    p.setY(i, y + Math.sin(a*3 + 1)*0.006 + Math.sin(a*5)*0.003 - (y > 0.08 ? 0.012*Math.max(0, Math.cos(a - 0.6)) : 0)); }
+  lat.computeVertexNormals();
+  const m = new THREE.Mesh(lat, red); m.castShadow = true; m.receiveShadow = true; hat.add(m);
+  // 帽頂一圈縫線與兩個透氣孔的暗點
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.093, 0.004, 4, 28), new THREE.MeshStandardMaterial({ color: 0x3e0b15, roughness: 1 }));
+  band.rotation.x = Math.PI/2; band.position.y = 0.012; hat.add(band);
+  // 帽繩：從帽簷兩側垂到草裡
+  const cord = new THREE.MeshStandardMaterial({ color: 0x2a1a18, roughness: 1 });
+  for (const s of [-1, 1]){
+    const c = new THREE.CatmullRomCurve3([new THREE.Vector3(s*0.1, -0.004, 0.0), new THREE.Vector3(s*0.07, -0.1, 0.06), new THREE.Vector3(s*0.02, -0.2, 0.11), new THREE.Vector3(0, -0.26, 0.13)]);
+    const tm = new THREE.Mesh(new THREE.TubeGeometry(c, 12, 0.0025, 4), cord); hat.add(tm);
+  }
+  const tog = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.02, 6), cord); tog.position.set(0, -0.2, 0.115); hat.add(tog);
+  // 帽子半側立在草上：帽頂朝向人，帽簷一邊翹起
+  hat.position.set(0.6, H(0.6, 0.8) + 0.14, 0.8);
+  hat.rotation.set(0.25, -0.5, 1.05);
+  scene.add(hat);
+}
+
+/* ---------- 人：CC0 的 Male Base Mesh（orange-juice-games）加上自己做的衣服殼層 ----------
+   衣服的做法：從人體的蒙皮網格挑出某一區的三角形，沿著（焊接後的）法線往外推，變成同一副骨架的 SkinnedMesh；
+   擺什麼姿勢衣服都跟著走。工裝褲寬鬆、褲腳束口；T 恤因為倒立往胸口滑下，露出腹部；黑色高筒工作靴；黑短髮往下垂 */
+const fig = { ready: false };
+const body = new THREE.Group(); scene.add(body);
+const MAT = {
+  skin: new THREE.MeshStandardMaterial({ color: 0xb98466, roughness: 0.62 }),
+  pants: new THREE.MeshStandardMaterial({ color: 0x1d2030, roughness: 1, side: THREE.DoubleSide }),
+  shirt: new THREE.MeshStandardMaterial({ color: 0x4a2c22, roughness: 0.95, side: THREE.DoubleSide }),
+  boots: new THREE.MeshStandardMaterial({ color: 0x121212, roughness: 0.55 }),
+  hair: new THREE.MeshStandardMaterial({ color: 0x0b0a0a, roughness: 0.8, side: THREE.DoubleSide }),
+};
+// 衣服的皺褶：依身體座標的 3D 噪聲把布往內外推一點
+const wr = (x, y, z, f) => (vn(x*f + y*f*0.3, z*f*1.7 + y*f) - 0.5) + (vn(y*f*2.3 - x*f, z*f*2.1 + 4) - 0.5)*0.5;
+
+function buildFigure(gltf){
+  const root = gltf.scene;
+  let skin = null; root.traverse(o => { if (o.isSkinnedMesh) skin = o; });
+  skin.material = MAT.skin; skin.castShadow = true; skin.receiveShadow = true; skin.frustumCulled = false;
+  const bones = {}; skin.skeleton.bones.forEach(b => bones[b.name] = b);
+  const geo = skin.geometry, pos = geo.attributes.position, nrm = geo.attributes.normal, si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const N = pos.count;
+  // 焊接法線：同一個位置的頂點共用平均法線，往外推時才不會裂開
+  const key = i => `${Math.round(pos.getX(i)*2000)},${Math.round(pos.getY(i)*2000)},${Math.round(pos.getZ(i)*2000)}`;
+  const acc = new Map();
+  for (let i = 0; i < N; i++){ const k = key(i); const a = acc.get(k) || [0, 0, 0]; a[0] += nrm.getX(i); a[1] += nrm.getY(i); a[2] += nrm.getZ(i); acc.set(k, a); }
+  const SN = new Float32Array(N*3);
+  for (let i = 0; i < N; i++){ const a = acc.get(key(i)), l = Math.hypot(...a) || 1; SN[i*3] = a[0]/l; SN[i*3+1] = a[1]/l; SN[i*3+2] = a[2]/l; }
+  const dom = new Array(N);
+  for (let i = 0; i < N; i++){ let bw = -1, bi = 0; for (let k = 0; k < 4; k++){ const w = sw.getComponent(i, k); if (w > bw){ bw = w; bi = si.getComponent(i, k); } } dom[i] = skin.skeleton.bones[bi].name; }
+  const idx = geo.index ? geo.index.array : [...Array(N).keys()];
+
+  // 殼層：f(i, x, y, z, bone) 回傳 null（不要這個頂點）或 [往外推的距離, 額外位移 dx, dy, dz]
+  function shell(f, mat){
+    const off = new Array(N);
+    for (let i = 0; i < N; i++) off[i] = f(i, pos.getX(i), pos.getY(i), pos.getZ(i), dom[i]);
+    const P = [], NN = [], SI = [], SW = [];
+    for (let t = 0; t < idx.length; t += 3){
+      const a = idx[t], b = idx[t+1], c = idx[t+2];
+      if (!off[a] || !off[b] || !off[c]) continue;
+      for (const i of [a, b, c]){
+        const o = off[i];
+        P.push(pos.getX(i) + SN[i*3]*o[0] + (o[1]||0), pos.getY(i) + SN[i*3+1]*o[0] + (o[2]||0), pos.getZ(i) + SN[i*3+2]*o[0] + (o[3]||0));
+        NN.push(SN[i*3], SN[i*3+1], SN[i*3+2]);
+        for (let k = 0; k < 4; k++){ SI.push(si.getComponent(i, k)); SW.push(sw.getComponent(i, k)); }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(NN, 3));
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(SI, 4));
+    g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(SW, 4));
+    const m = new THREE.SkinnedMesh(g, mat);
+    m.bind(skin.skeleton, skin.bindMatrix); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
+    skin.parent.add(m); return m;
+  }
+  const isArm = b => /arm|hand|^f_|thumb/.test(b);
+  const isLeg = b => /thigh|shin|pelvis|^spine$/.test(b);
+  const isFoot = b => /foot|toe|heel/.test(b);
+  // 靴子：腳踝以下，略大一圈；鞋底更厚
+  shell((i, x, y, z, b) => (isFoot(b) || (/shin/.test(b) && y < -0.8)) ? [0.022 + (y < -0.975 ? 0.012 : 0) + Math.max(0, -0.86 - y)*0.12] : null, MAT.boots);
+  // 工裝褲：腰到腳踝上方，很寬鬆；大腿外側有口袋，褲腳收束口；倒立時布料往腰部垂、膝蓋附近皺成一團
+  shell((i, x, y, z, b) => {
+    if (isArm(b) || y > 0.035 || y < -0.86 || !(isLeg(b) || (/spine001/.test(b) && y < 0.035))) return null;
+    const cuff = ss(y, -0.86, -0.7), wrinkle = wr(x, y, z, 26)*0.016 + wr(x, y, z, 9)*0.012;
+    let inf = lerp(0.016, 0.05, cuff) + wrinkle*cuff;
+    if (y < 0 && y > -0.42) inf += 0.012;   // 大腿更寬
+    if (Math.abs(z) > 0.13 && y < -0.16 && y > -0.36) inf += 0.016*ss(Math.abs(z), 0.13, 0.17);   // 側邊的貨物口袋
+    return [inf, 0, Math.max(0, y + 0.3)*0.04*cuff, 0];
+  }, MAT.pants);
+  // T 恤：倒立時往胸口滑下，下襬翻開、露出腹部（腰線以上約 15 公分都是肚子）；短袖寬鬆
+  shell((i, x, y, z, b) => {
+    if (/spine00[45]|spine005/.test(b) || isLeg(b)) return null;
+    if (y < 0.2 || y > 0.63) return null;
+    if (isArm(b)){ if (!/upper_arm/.test(b) || y < 0.47) return null; return [0.03 + 0.02*ss(y, 0.55, 0.47) + wr(x, y, z, 30)*0.01]; }
+    if (x > 0.02 && y > 0.58 && Math.abs(z) < 0.07) return null;   // 圓領
+    const hem = ss(y, 0.36, 0.2);   // 越靠近下襬越鬆，布往頭的方向垂、張開
+    return [0.024 + 0.05*hem + wr(x, y, z, 22)*0.016*(0.4 + hem), 0, hem*0.02, 0];
+  }, MAT.shirt);
+  // 頭髮：頭頂、後腦和兩側；倒立時往地面方向垂下（模型座標的 +y）
+  shell((i, x, y, z, b) => {
+    if (!/spine005/.test(b) || y < 0.72) return null;
+    const face = x > 0.035 && y < 0.87 && Math.abs(z) < 0.07;
+    if (face || (x > 0.05 && y < 0.84)) return null;
+    const top = ss(y, 0.78, 0.95);
+    return [0.014 + 0.01*top + wr(x, y, z, 60)*0.012, 0, 0.035*top + Math.max(0, wr(x, y, z, 45))*0.03*top, 0];
+  }, MAT.hair);
+
+  const s = FIG_H / 1.95; root.scale.setScalar(s);
+  body.add(root);
+  // 模型面向 +x：轉成面向鏡頭（+z），再整個上下翻轉成倒立
+  fig.qBase = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI/2));
+  fig.bones = bones; fig.root = root; fig.skin = skin;
+  fig.bind = new Map(); skin.skeleton.bones.forEach(b => fig.bind.set(b, b.quaternion.clone()));
+  // 手掌的法線（在手骨的區域座標裡）：綁定姿勢時手垂在身側，掌心朝向身體
+  root.updateMatrixWorld(true);
+  for (const sd of ['L', 'R']){
+    const h = bones['hand' + sd], wq = h.getWorldQuaternion(new THREE.Quaternion());
+    const toBody = new THREE.Vector3(0, 0, sd === 'L' ? 1 : -1);   // 模型的左邊在 -z
+    fig['palm' + sd] = toBody.applyQuaternion(wq.invert());
+  }
+  calibrate();
+  fig.ready = true;
+}
+
+/* ---------- 擺姿勢：每格重設骨架，依平衡狀態算出整個身體的傾斜、腿的擺動，最後用兩段 IK 把手固定在地上 ---------- */
+const _p = new THREE.Vector3(), _c2 = new THREE.Vector3(), _v = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion(), _wq = new THREE.Quaternion(), _pq = new THREE.Quaternion();
+const AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+function setWorldQ(bone, wq){ bone.parent.getWorldQuaternion(_pq).invert(); bone.quaternion.copy(_pq.multiply(wq)); bone.updateMatrixWorld(true); }
+function aimTo(bone, child, dir){
+  bone.getWorldPosition(_p); child.getWorldPosition(_c2); _v.subVectors(_c2, _p).normalize();
+  _q.setFromUnitVectors(_v, _d.copy(dir).normalize());
+  bone.getWorldQuaternion(_wq); _wq.premultiply(_q); setWorldQ(bone, _wq);
+}
+function rotW(bone, axis, ang){ _q.setFromAxisAngle(axis, ang); bone.getWorldQuaternion(_wq); _wq.premultiply(_q); setWorldQ(bone, _wq); }
+// 繞著骨頭自己的方向扭轉，讓某個區域方向（例如掌心）盡量朝向 want
+function twistTo(bone, child, localVec, want){
+  bone.getWorldPosition(_p); child.getWorldPosition(_c2); const ax = _v.subVectors(_c2, _p).normalize().clone();
+  bone.getWorldQuaternion(_wq); const cur = localVec.clone().applyQuaternion(_wq);
+  const a = cur.clone().projectOnPlane(ax).normalize(), b = want.clone().projectOnPlane(ax).normalize();
+  if (a.lengthSq() < 1e-6 || b.lengthSq() < 1e-6) return;
+  const ang = Math.atan2(ax.dot(a.clone().cross(b)), a.dot(b));
+  rotW(bone, ax, ang);
+}
+const BAL = { th: 0, thv: 0, ph: 0, phv: 0, legs: 0, legsv: 0, split: 0, splitv: 0, knee: 0, pitch: 0, pitchv: 0, push: 0, energy: 0 };
+const POSE0 = { };
+function resetBones(){ for (const [b, q] of fig.bind) b.quaternion.copy(q); }
+function placeBody(th, pitch){
+  // 整個人繞著兩手中間（地上）左右傾、前後晃
+  _q.setFromAxisAngle(AX.z, th).multiply(_wq.setFromAxisAngle(AX.x, pitch));
+  body.quaternion.copy(_q).multiply(fig.qBase);
+  _p.copy(POSE0.P0).sub(POSE0.pivot).applyQuaternion(_q);
+  body.position.copy(POSE0.pivot).add(_p);
+  body.updateMatrixWorld(true);
+}
+function straightArms(){
+  const B = fig.bones;
+  for (const sd of ['L', 'R']){
+    B['upper_arm' + sd].getWorldPosition(_p);
+    const side = Math.sign(_p.x - body.position.x) || 1;
+    _d.set(side*0.07, -1, 0.04);
+    aimTo(B['upper_arm' + sd], B['forearm' + sd], _d); aimTo(B['forearm' + sd], B['hand' + sd], _d);
+  }
+}
+function calibrate(){
+  POSE0.P0 = new THREE.Vector3(0, 2, 0); POSE0.pivot = new THREE.Vector3(0, 0, 0);
+  resetBones(); placeBody(0, 0); straightArms();
+  const B = fig.bones, wl = B.handL.getWorldPosition(new THREE.Vector3()), wr_ = B.handR.getWorldPosition(new THREE.Vector3());
+  const mid = wl.clone().add(wr_).multiplyScalar(0.5);
+  const target = new THREE.Vector3(0, H(0, 0) + 0.045, 0);
+  const shift = target.clone().sub(mid);
+  POSE0.P0.add(shift); POSE0.pivot.copy(target);
+  POSE0.W = { L: wl.add(shift), R: wr_.add(shift) };
+  const ua = B.upper_armL.getWorldPosition(new THREE.Vector3()), fa = B.forearmL.getWorldPosition(new THREE.Vector3()), ha = B.handL.getWorldPosition(new THREE.Vector3());
+  POSE0.la = ua.distanceTo(fa); POSE0.lb = fa.distanceTo(ha);
+}
+const _S = new THREE.Vector3(), _T = new THREE.Vector3(), _E = new THREE.Vector3(), _pole = new THREE.Vector3();
+function armIK(sd, side){
+  const B = fig.bones, a = POSE0.la, b = POSE0.lb;
+  B['upper_arm' + sd].getWorldPosition(_S); _T.copy(POSE0.W[sd]);
+  const dv = _T.clone().sub(_S); let d = dv.length(); dv.normalize();
+  d = clamp(d, Math.abs(a - b) + 1e-3, a + b - 1e-4);
+  const cosA = clamp((a*a + d*d - b*b) / (2*a*d), -1, 1), sinA = Math.sqrt(1 - cosA*cosA);
+  _pole.set(side*0.8, 0, -0.6).projectOnPlane(dv).normalize();   // 手肘往外、往後彎
+  _E.copy(_S).addScaledVector(dv, a*cosA).addScaledVector(_pole, a*sinA);
+  aimTo(B['upper_arm' + sd], B['forearm' + sd], _E.clone().sub(_S));
+  B['forearm' + sd].getWorldPosition(_p);
+  aimTo(B['forearm' + sd], B['hand' + sd], _T.clone().sub(_p));
+  // 手掌平貼地面，手指朝前、微微向外
+  aimTo(B['hand' + sd], B['f_middle01' + sd], _d.set(side*0.35, -0.05, 1));
+  twistTo(B['hand' + sd], B['f_middle01' + sd], fig['palm' + sd], _v.set(0, -1, 0));
+}
+function pose(t){
+  const B = fig.bones, S = BAL;
+  resetBones();
+  placeBody(S.th, S.pitch + Math.sin(t*1.3)*0.006);
+  // 脊椎：微微拱成一道弧，失衡時往反方向彎著找回重心
+  const bend = -S.th*0.35 + S.legs*0.12;
+  for (const [n, k] of [['spine001', 0.35], ['spine002', 0.35], ['spine003', 0.3]]){ rotW(B[n], AX.z, bend*k); rotW(B[n], AX.x, -0.03); }
+  // 頭：倒立時稍微抬起看前方，跟著平衡微微轉
+  rotW(B.spine004, AX.x, 0.12); rotW(B.spine005, AX.x, 0.1); rotW(B.spine005, AX.z, -S.th*0.3);
+  // 腿：往反方向擺來平衡；越不穩兩腿越張開（前後剪刀），膝蓋也彎
+  const sp = S.split, kn = S.knee;
+  for (const sd of ['L', 'R']){
+    const sg = sd === 'L' ? 1 : -1;
+    rotW(B['thigh' + sd], AX.z, S.legs + sg*sp*0.25);
+    rotW(B['thigh' + sd], AX.x, sg*sp*0.55 - 0.04);
+    rotW(B['shin' + sd], AX.x, -(kn*(sd === 'L' ? 1.15 : 0.55) + 0.03));
+    // 腳背繃直：腳尖順著小腿往上，稍微朝向鏡頭
+    B['shin' + sd].getWorldPosition(_p); B['foot' + sd].getWorldPosition(_c2);
+    const leg = _c2.clone().sub(_p).normalize();
+    aimTo(B['foot' + sd], B['toe' + sd], leg.addScaledVector(AX.z, 0.45 - kn*0.3));
+  }
+  // 手：兩段 IK，讓手掌一直撐在原地；身體歪向哪一邊，那邊的手肘就被壓彎，另一隻手可能離地
+  B.upper_armL.getWorldPosition(_p);
+  const sideL = Math.sign(_p.x - POSE0.pivot.x) || 1;
+  armIK('L', sideL); armIK('R', -sideL);
+}
+
+/* ---------- 平衡：倒立的人像一根倒立擺。手機（或滑鼠、鍵盤）的晃動推他，他自己的修正把他拉回來 ---------- */
+function stepBalance(dt, t){
+  const S = BAL;
+  const noise = (vn(t*0.9, 1.3) - 0.5)*0.7 + (vn(t*2.7, 5.1) - 0.5)*0.35;
+  // 越歪修正越吃力：小角度時穩，大角度時回復力變弱，會晃好幾下才站穩
+  const w = 3.2 * (1 - 0.45*ss(Math.abs(S.th), 0.18, 0.5));
+  const zeta = 0.22 + 0.1*ss(Math.abs(S.th), 0.3, 0.55);
+  // 晃動的力：直接的慣性（手機往左甩，人往右倒）＋持續搖晃累積的「晃動能量」——一直晃就左右大幅失衡，方向隨機地換
+  input.ax *= Math.exp(-dt*12); input.e *= Math.exp(-dt*1.6);
+  const shakeW = clamp(input.e/7, 0, 1.3) * ((vn(t*0.75, 3.3) - 0.5)*2 + (vn(t*1.9, 8.1) - 0.5)) * 10;
+  const acc = -w*w*S.th - 2*zeta*w*S.thv + noise*0.25 + S.push - input.ax*1.1 + shakeW;
+  S.thv += acc*dt; S.th += S.thv*dt;
+  const LIM = 0.62;
+  if (Math.abs(S.th) > LIM){ S.th = Math.sign(S.th)*LIM; S.thv *= -0.3; }
+  // 前後也一點點晃
+  const pacc = -16*S.pitch - 2.2*S.pitchv + (vn(t*1.1, 9.1) - 0.5)*0.35 + S.push*0.08*Math.sin(t*3);
+  S.pitchv += pacc*dt + shakeW*0.01*dt; S.pitch += S.pitchv*dt;
+  // 腿：反方向擺，稍微落後一點（像在用腿找重心）
+  const lt = -S.th*1.1 - S.thv*0.28;
+  S.legsv += (-(S.legs - lt)*55 - S.legsv*9)*dt; S.legs += S.legsv*dt;
+  const unstable = clamp(Math.abs(S.th)*1.8 + Math.abs(S.thv)*0.35, 0, 1);
+  S.energy = unstable;
+  S.splitv += (-(S.split - unstable*0.9)*30 - S.splitv*7)*dt; S.split += S.splitv*dt;
+  S.knee = lerp(S.knee, unstable*0.7, 1 - Math.exp(-dt*4));
+  S.push *= Math.exp(-dt*10);
+}
+
+/* ---------- 輸入：手機搖晃（DeviceMotion）、拖曳、方向鍵 ---------- */
+const st = { started:false, uiOn:false, muted:false, motion:false, lastShake: 0 };
+const input = { hp: 0, prevG: null, ax: 0, e: 0 };
+function screenX(v){
+  if (!v) return 0;
+  const ang = (screen.orientation && screen.orientation.angle != null) ? screen.orientation.angle : (window.orientation || 0);
+  const a = ((ang % 360) + 360) % 360;
+  return a === 90 ? -(v.y || 0) : a === 180 ? -(v.x || 0) : a === 270 ? (v.y || 0) : (v.x || 0);
+}
+function onMotion(e){
+  st.motion = true;
+  let ax;
+  if (e.acceleration && e.acceleration.x != null) ax = screenX(e.acceleration);
+  else {   // 沒有去掉重力的加速度：自己做高通濾波
+    const g = screenX(e.accelerationIncludingGravity);
+    input.hp = 0.8*(input.hp + g - (input.prevG ?? g)); input.prevG = g; ax = input.hp;
+  }
+  const rr = e.rotationRate || {};
+  const roll = (rr.alpha || 0) * Math.PI/180;   // 手機左右擺（繞螢幕法線轉）
+  // 慣性：手機往左加速，人相對往右倒；手持的細微抖動不算
+  let f = ax - roll*1.2;
+  if (Math.abs(ax) < 0.4 && Math.abs(roll) < 0.3) f = 0;
+  input.ax = clamp(f, -14, 14);
+  input.e = Math.min(14, input.e + Math.abs(input.ax)*0.06);
+  if (Math.abs(f) > 1.5) st.lastShake = performance.now();
+}
+async function enableMotion(){
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+      const r = await DeviceMotionEvent.requestPermission(); if (r !== 'granted') return false;
+    }
+    addEventListener('devicemotion', onMotion);
+    return true;
+  } catch (e) { return false; }
+}
+// 拖曳：左右甩動滑鼠或手指就像晃手機
+const drag = new Map();
+canvas.addEventListener('pointerdown', e => { if (!st.started) return; resumeAudio(); drag.set(e.pointerId, { x: e.clientX, t: performance.now() }); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  const d = drag.get(e.pointerId); if (!d) return;
+  const now = performance.now(), dt = Math.max(8, now - d.t)/1000, vx = (e.clientX - d.x)/Math.max(innerWidth, 1)/dt;
+  d.x = e.clientX; d.t = now;
+  // 拖曳的速度當成手機的加速度：往右甩，人往左倒
+  input.ax = clamp(input.ax + vx*4, -14, 14); input.e = Math.min(14, input.e + Math.abs(vx)*0.35);
+  if (Math.abs(vx) > 0.4) st.lastShake = now;
+});
+const up = e => drag.delete(e.pointerId);
+canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+const keys = new Set();
+const KEYMAP = { m:'sound', h:'ui', ' ':'shove' };
+const ACT = {
+  sound(){ st.muted = !st.muted; if (audio) audio.master.gain.value = st.muted ? 0 : 0.9; resumeAudio(); renderKeys(); },
+  ui(){ setUI(!st.uiOn); },
+  shove(){ BAL.thv += (R() < 0.5 ? -1 : 1)*(1.2 + R()*0.8); st.lastShake = performance.now(); },
+  left(){ BAL.thv -= 0.9; }, right(){ BAL.thv += 0.9; },
+};
+addEventListener('keydown', e => {
+  if (!st.started) return;
+  const k = e.key.toLowerCase();
+  if (KEYMAP[k]) { e.preventDefault(); ACT[KEYMAP[k]](); return; }
+  if (['arrowleft','arrowright','a','d'].includes(k)){ keys.add(k); e.preventDefault(); }
+});
+addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+const hudEl = document.getElementById('hud'), uiBtn = document.getElementById('uiBtn'), hintEl = document.getElementById('hint');
+function setUI(on){ st.uiOn = on; hudEl.hidden = !on; uiBtn.hidden = !on; uiBtn.textContent = on ? 'Hide UI' : 'Show UI'; uiBtn.setAttribute('aria-pressed', String(!on)); }
+uiBtn.addEventListener('click', () => ACT.ui());
+const keysEl = document.getElementById('keys');
+keysEl.addEventListener('click', e => { const b = e.target.closest('button[data-a]'); if (b && ACT[b.dataset.a]) ACT[b.dataset.a](); });
+function renderKeys(){
+  const B = (a, k, label, off) => `<button class="k" type="button" data-a="${a}"><b>${k}</b><i class="${off?'off':''}">${label}</i></button>`;
+  keysEl.innerHTML = B('left', '←', 'push left') + B('right', '→', 'push right') + B('shove', 'SPACE', 'shove') + B('sound', 'M', `sound ${st.muted?'off':'on'}`, st.muted);
+}
+
+/* ---------- 聲音：Web Audio 即時合成。原野的風、草沙沙、遠處的雲雀；晃得厲害時一聲用力的吐氣 ---------- */
+let audio = null;
+function resumeAudio(){ if (audio && audio.ac.state !== 'running') audio.ac.resume().catch(() => {}); }
+['touchend','click','keydown'].forEach(ev => addEventListener(ev, () => { if (st.started) resumeAudio(); }, { capture:true, passive:true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAudio(); });
+function unlockMedia(){
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try {
+    const n = 2205, b = new ArrayBuffer(44 + n*2), v = new DataView(b), w = (o, t) => { for (let i=0;i<t.length;i++) v.setUint8(o+i, t.charCodeAt(i)); };
+    w(0,'RIFF'); v.setUint32(4, 36 + n*2, true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,22050,true); v.setUint32(28,44100,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40, n*2, true);
+    const el = new Audio(URL.createObjectURL(new Blob([b], { type:'audio/wav' })));
+    el.setAttribute('playsinline', ''); el.loop = true; el.volume = 0.01; const pr = el.play(); if (pr) pr.catch(() => {});
+  } catch (e) {}
+}
+function startAudio(){
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)(), SR = ac.sampleRate;
+    const master = ac.createGain(); master.gain.value = st.muted ? 0 : 0.9;
+    const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
+    const noiseBuf = (sec, brown) => { const b = ac.createBuffer(1, SR*sec, SR), d = b.getChannelData(0); let l = 0;
+      for (let i = 0; i < d.length; i++){ const w = Math.random()*2 - 1; if (brown){ l = (l + 0.02*w)/1.02; d[i] = l*3.5; } else d[i] = w; } return b; };
+    const loop = (buf) => { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.start(); return s; };
+    // 風：低沉的棕噪音 + 草葉沙沙的帶通白噪音
+    const wind = ac.createGain(); wind.gain.value = 0.35; const wl = ac.createBiquadFilter(); wl.type = 'lowpass'; wl.frequency.value = 420;
+    loop(noiseBuf(4, true)).connect(wl); wl.connect(wind); wind.connect(master);
+    const rus = ac.createGain(); rus.gain.value = 0.05; const rb = ac.createBiquadFilter(); rb.type = 'bandpass'; rb.frequency.value = 3200; rb.Q.value = 0.6;
+    loop(noiseBuf(3, false)).connect(rb); rb.connect(rus); rus.connect(master);
+    const huffBuf = noiseBuf(1, false);
+    audio = { ac, master, wind, wl, rus, rb, huffBuf, nextBird: ac.currentTime + 2, lastHuff: 0 };
+  } catch (e) { audio = null; }
+}
+function birdSong(A){
+  // 雲雀般的一串顫音：快速的頻率滑動，音量很小、聽起來在遠處的坡上
+  const ac = A.ac, t0 = ac.currentTime + 0.05, n = 6 + Math.floor(Math.random()*14), pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  const g = ac.createGain(); g.gain.value = 0; const o = ac.createOscillator(); o.type = 'sine';
+  if (pan){ pan.pan.value = Math.random()*1.6 - 0.8; o.connect(g); g.connect(pan); pan.connect(A.master); } else { o.connect(g); g.connect(A.master); }
+  let t = t0; const base = 2600 + Math.random()*1400;
+  for (let i = 0; i < n; i++){
+    const d = 0.05 + Math.random()*0.09, f0 = base*(0.8 + Math.random()*0.5), f1 = f0*(Math.random() < 0.5 ? 1.35 : 0.7);
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + d*0.8);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.012 + Math.random()*0.01, t + d*0.2); g.gain.linearRampToValueAtTime(0, t + d);
+    t += d + Math.random()*0.04;
+  }
+  o.start(t0); o.stop(t + 0.1);
+}
+function huff(A, k){
+  // 用力撐住時的一口吐氣：短促的帶通噪音
+  const ac = A.ac, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), t = ac.currentTime;
+  s.buffer = A.huffBuf; f.type = 'bandpass'; f.frequency.value = 900 + Math.random()*400; f.Q.value = 1.2;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18*k, t + 0.03); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  s.connect(f); f.connect(g); g.connect(A.master); s.start(t); s.stop(t + 0.4);
+}
+function audioFrame(t){
+  const A = audio, now = A.ac.currentTime, w = U.wind.value;
+  A.wind.gain.setTargetAtTime(0.18 + 0.5*w, now, 0.4); A.wl.frequency.setTargetAtTime(300 + 500*w, now, 0.4);
+  A.rus.gain.setTargetAtTime(0.02 + 0.12*w*w, now, 0.3);
+  if (now > A.nextBird){ birdSong(A); A.nextBird = now + 2 + Math.random()*7; }
+  if (BAL.energy > 0.55 && now - A.lastHuff > 1.4 && Math.abs(BAL.thv) > 0.6){ huff(A, clamp(BAL.energy, 0.5, 1)); A.lastHuff = now; }
+}
+
+/* ---------- 主迴圈 ---------- */
+let last = performance.now(); const T0 = last;
+function frame(now){
+  const dt = clamp((now - last)/1000, 0, 0.05); last = now;
+  const t = (now - T0)/1000;
+  // 微風：慢慢起伏，偶爾一陣
+  const wind = 0.28 + 0.12*Math.sin(t*0.13)*Math.sin(t*0.051 + 1) + 0.25*Math.max(0, vn(t*0.15, 2.2) - 0.55)*3;
+  U.t.value = t; U.wind.value = wind;
+
+  const kx = (keys.has('arrowleft')||keys.has('a') ? -1 : 0) + (keys.has('arrowright')||keys.has('d') ? 1 : 0);
+  if (kx){ BAL.push += kx*4*dt*10; st.lastShake = now; }
+  // 固定的時間步長，穩定
+  if (window.__freeze) Object.assign(BAL, window.__freeze);
+  let rem = dt; while (rem > 1e-4){ const h = Math.min(rem, 1/120); stepBalance(h, t); rem -= h; }
+  if (fig.ready) pose(t);
+
+  // 鏡頭：手持般的極輕微漂移
+  camera.position.copy(CAM.pos).add(_c2.set((vn(t*0.2, 1) - 0.5)*0.03, (vn(t*0.17, 4) - 0.5)*0.02, 0));
+  camera.lookAt(CAM.look.x + (vn(t*0.15, 7) - 0.5)*0.02, CAM.look.y + (vn(t*0.13, 9) - 0.5)*0.015, CAM.look.z);
+  camera.updateMatrixWorld();
+  sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld();
+
+  post.uniforms.uT.value = t;
+  if (audio && !st.muted) audioFrame(t);
+
+  renderer.setRenderTarget(rt); renderer.render(scene, camera);
+  renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+  requestAnimationFrame(frame);
+}
+
+resize();
+renderKeys();
+new GLTFLoader().load('male_base_mesh.glb', buildFigure, undefined, e => console.error('figure', e));
+requestAnimationFrame(frame);
+document.getElementById('start').addEventListener('click', async () => {
+  st.started = true;
+  document.getElementById('intro').classList.add('gone');
+  unlockMedia(); startAudio();
+  setUI(false);
+  const ok = await enableMotion();
+  hintEl.textContent = MOBILE ? (ok ? 'Shake your phone left and right' : 'Swipe left and right') : 'Drag left and right, or use the arrow keys';
+  hintEl.classList.add('on'); setTimeout(() => hintEl.classList.remove('on'), 4500);
+});
+window.__hs = { stepBalance, input, CAM, BAL, fig, st, ACT, scene, camera, body, pose, POSE0 };
+</script>
