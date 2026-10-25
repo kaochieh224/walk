@@ -75,7 +75,9 @@ const FIG_H = 1.74;   // 人的身高（公尺）
 /* ---------- 共用噪聲與亂數 ---------- */
 function mulberry(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed); t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14) >>> 0) / 4294967296; }; }
 const R = mulberry(20261024);
-const ss = THREE.MathUtils.smoothstep, lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
+const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
+// smoothstep 用 GLSL 的定義：邊界可以由大到小（遞減）
+const ss = (x, a, b) => { const t = clamp((x - a)/(b - a), 0, 1); return t*t*(3 - 2*t); };
 const hash2 = (x, z) => { const s = Math.sin(x*127.1 + z*311.7)*43758.5453; return s - Math.floor(s); };
 function vn(x, z){ const ix = Math.floor(x), iz = Math.floor(z); let fx = x - ix, fz = z - iz; fx = fx*fx*(3-2*fx); fz = fz*fz*(3-2*fz);
   const a = hash2(ix, iz), b = hash2(ix+1, iz), c = hash2(ix, iz+1), d = hash2(ix+1, iz+1); return a + (b-a)*fx + (c-a)*fz + (a-b-c+d)*fx*fz; }
@@ -381,16 +383,21 @@ function buildFigure(gltf){
   const idx = geo.index ? geo.index.array : [...Array(N).keys()];
 
   // 殼層：f(i, x, y, z, bone) 回傳 null（不要這個頂點）或 [往外推的距離, 額外位移 dx, dy, dz]
-  function shell(f, mat){
-    const off = new Array(N);
-    for (let i = 0; i < N; i++) off[i] = f(i, pos.getX(i), pos.getY(i), pos.getZ(i), dom[i]);
+  // 殼層：f(i, x, y, z, bone) 回傳 null（不要這個頂點）或 [往外推的距離, 額外位移 dx, dy, dz]
+  // lo～hi：衣服的上下緣。跨過邊緣的三角形不丟掉，而是把外面的頂點壓到邊緣上，下襬、褲頭、褲腳才是一條平整的線（不會鋸齒狀）
+  function shell(f, mat, lo = -9, hi = 9){
+    const off = new Array(N), yc = new Float32Array(N), inside = new Uint8Array(N);
+    for (let i = 0; i < N; i++){
+      const y = pos.getY(i); yc[i] = clamp(y, lo, hi); inside[i] = y === yc[i] ? 1 : 0;
+      off[i] = (inside[i] || Math.abs(y - yc[i]) < 0.09) ? f(i, pos.getX(i), yc[i], pos.getZ(i), inside[i] ? dom[i] : null) : null;
+    }
     const P = [], NN = [], SI = [], SW = [];
     for (let t = 0; t < idx.length; t += 3){
       const a = idx[t], b = idx[t+1], c = idx[t+2];
-      if (!off[a] || !off[b] || !off[c]) continue;
+      if (!off[a] || !off[b] || !off[c] || !(inside[a] || inside[b] || inside[c])) continue;
       for (const i of [a, b, c]){
         const o = off[i];
-        P.push(pos.getX(i) + SN[i*3]*o[0] + (o[1]||0), pos.getY(i) + SN[i*3+1]*o[0] + (o[2]||0), pos.getZ(i) + SN[i*3+2]*o[0] + (o[3]||0));
+        P.push(pos.getX(i) + SN[i*3]*o[0] + (o[1]||0), yc[i] + SN[i*3+1]*o[0] + (o[2]||0), pos.getZ(i) + SN[i*3+2]*o[0] + (o[3]||0));
         NN.push(SN[i*3], SN[i*3+1], SN[i*3+2]);
         for (let k = 0; k < 4; k++){ SI.push(si.getComponent(i, k)); SW.push(sw.getComponent(i, k)); }
       }
@@ -404,37 +411,105 @@ function buildFigure(gltf){
     m.bind(skin.skeleton, skin.bindMatrix); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
     skin.parent.add(m); return m;
   }
-  const isArm = b => /arm|hand|^f_|thumb/.test(b);
-  const isLeg = b => /thigh|shin|pelvis|^spine$/.test(b);
-  const isFoot = b => /foot|toe|heel/.test(b);
+  const isArm = b => b != null && /arm|hand|^f_|thumb/.test(b);
+  const isLeg = b => b == null || /thigh|shin|pelvis|^spine$/.test(b);
+  const isFoot = b => b == null || /foot|toe|heel/.test(b);
+  const isHead = b => b != null && /spine005/.test(b);
+  // 身體：原本的頭只有三圈頂點、沒有五官，從正面看像後腦勺；拿掉，換成下面自己做的頭
+  skin.visible = false;
+  shell((i, x, y, z, b) => (isHead(b) && y > 0.735) ? null : [0], MAT.skin);
   // 靴子：腳踝以下，略大一圈；鞋底更厚
-  shell((i, x, y, z, b) => (isFoot(b) || (/shin/.test(b) && y < -0.8)) ? [0.022 + (y < -0.975 ? 0.012 : 0) + Math.max(0, -0.86 - y)*0.12] : null, MAT.boots);
+  shell((i, x, y, z, b) => (isFoot(b) || /shin/.test(b)) ? [0.022 + (y < -0.975 ? 0.012 : 0) + Math.max(0, -0.86 - y)*0.12] : null, MAT.boots, -2, -0.8);
   // 工裝褲：腰到腳踝上方，很寬鬆；大腿外側有口袋，褲腳收束口；倒立時布料往腰部垂、膝蓋附近皺成一團
   shell((i, x, y, z, b) => {
-    if (isArm(b) || y > 0.035 || y < -0.86 || !(isLeg(b) || (/spine001/.test(b) && y < 0.035))) return null;
-    const cuff = ss(y, -0.86, -0.7), wrinkle = wr(x, y, z, 26)*0.016 + wr(x, y, z, 9)*0.012;
-    let inf = lerp(0.016, 0.05, cuff) + wrinkle*cuff;
+    if (isArm(b) || !(isLeg(b) || /spine001/.test(b))) return null;
+    const cuff = ss(y, -0.84, -0.7), wrinkle = wr(x, y, z, 26)*0.016 + wr(x, y, z, 9)*0.012;
+    let inf = lerp(0.018, 0.05, cuff) + wrinkle*cuff;
     if (y < 0 && y > -0.42) inf += 0.012;   // 大腿更寬
     if (Math.abs(z) > 0.13 && y < -0.16 && y > -0.36) inf += 0.016*ss(Math.abs(z), 0.13, 0.17);   // 側邊的貨物口袋
     return [inf, 0, Math.max(0, y + 0.3)*0.04*cuff, 0];
-  }, MAT.pants);
-  // T 恤：倒立時往胸口滑下，下襬翻開、露出腹部（腰線以上約 15 公分都是肚子）；短袖寬鬆
+  }, MAT.pants, -0.84, 0.03);
+  // 褲頭的鬆緊帶與抽繩：一圈略厚的布
+  shell((i, x, y, z, b) => (isArm(b) || !(isLeg(b) || /spine001/.test(b))) ? null : [0.026], MAT.pants, 0.0, 0.03);
+  // T 恤：倒立時往胸口滑下，下襬翻開、露出腹部；短袖寬鬆。下襬只微微張開（太開會像裙子）
   shell((i, x, y, z, b) => {
-    if (/spine00[45]|spine005/.test(b) || isLeg(b)) return null;
-    if (y < 0.2 || y > 0.63) return null;
-    if (isArm(b)){ if (!/upper_arm/.test(b) || y < 0.47) return null; return [0.03 + 0.02*ss(y, 0.55, 0.47) + wr(x, y, z, 30)*0.01]; }
-    if (x > 0.02 && y > 0.58 && Math.abs(z) < 0.07) return null;   // 圓領
-    const hem = ss(y, 0.36, 0.2);   // 越靠近下襬越鬆，布往頭的方向垂、張開
-    return [0.024 + 0.05*hem + wr(x, y, z, 22)*0.016*(0.4 + hem), 0, hem*0.02, 0];
-  }, MAT.shirt);
-  // 頭髮：頭頂、後腦和兩側；倒立時往地面方向垂下（模型座標的 +y）
-  shell((i, x, y, z, b) => {
-    if (!/spine005/.test(b) || y < 0.72) return null;
-    const face = x > 0.035 && y < 0.87 && Math.abs(z) < 0.07;
-    if (face || (x > 0.05 && y < 0.84)) return null;
-    const top = ss(y, 0.78, 0.95);
-    return [0.014 + 0.01*top + wr(x, y, z, 60)*0.012, 0, 0.035*top + Math.max(0, wr(x, y, z, 45))*0.03*top, 0];
-  }, MAT.hair);
+    if (isHead(b) || /spine004/.test(b) || (b != null && isLeg(b))) return null;
+    if (isArm(b)){ if (!/upper_arm/.test(b) || y < 0.47) return null; return [0.03 + 0.018*ss(y, 0.55, 0.47) + wr(x, y, z, 30)*0.01]; }
+    if (x > 0.03 && y > 0.6 && Math.abs(z) < 0.055) return null;   // 圓領
+    const hem = ss(y, 0.34, 0.21);
+    return [0.026 + 0.02*hem + wr(x, y, z, 22)*0.014*(0.5 + hem), 0, hem*0.012, 0];
+  }, MAT.shirt, 0.21, 0.63);
+
+  // 頭：自己做的平滑頭型，有鼻子、眉骨、下巴、耳朵，臉上用頂點色畫出眉毛、眼睛、嘴唇；整顆掛在頭骨上
+  root.updateMatrixWorld(true);
+  const HC = new THREE.Vector3(0.0, 0.835, 0);   // 頭的中心（模型座標，正面是 +x）
+  const headGeo = new THREE.SphereGeometry(1, 40, 30), hp = headGeo.attributes.position, hcol = [];
+  const SKIN = new THREE.Color(0xb98466), BROW = new THREE.Color(0x1a1210), EYE = new THREE.Color(0x2a1a14), LIP = new THREE.Color(0x8a4a3e), _hc = new THREE.Color();
+  const gauss = (a, b) => Math.exp(-a*a - b*b);
+  for (let i = 0; i < hp.count; i++){
+    const ux = hp.getX(i), uy = hp.getY(i), uz = hp.getZ(i);
+    let rx = 0.098, ry = 0.118, rz = 0.079;
+    const low = ss(uy, -0.15, -0.9);
+    rz *= 1 - 0.28*low;                                   // 下巴收窄
+    if (ux < 0) rx *= 1 - 0.35*low;                        // 後腦下緣收進脖子
+    let X = ux*rx, Y = uy*ry, Z = uz*rz;
+    const front = ss(ux, 0.55, 0.95);
+    X += front*(0.022*gauss((uy + 0.08)/0.22, uz/0.13)    // 鼻子
+              + 0.006*gauss((uy - 0.3)/0.1, uz/0.6)        // 眉骨
+              - 0.008*gauss((uy - 0.12)/0.09, (Math.abs(uz) - 0.33)/0.14)   // 眼窩
+              + 0.006*gauss((uy + 0.62)/0.14, uz/0.3));    // 下巴
+    hp.setXYZ(i, X + HC.x, Y + HC.y, Z + HC.z);
+    _hc.copy(SKIN);
+    if (ux > 0.45){
+      const az = Math.abs(uz);
+      _hc.lerp(BROW, front*ss(Math.abs(uy - 0.27), 0.07, 0.03)*ss(az, 0.5, 0.42)*ss(az, 0.1, 0.16)*0.95);   // 眉毛
+      _hc.lerp(EYE, front*ss(Math.abs(uy - 0.13), 0.05, 0.02)*ss(az, 0.44, 0.38)*ss(az, 0.17, 0.22)*0.9);  // 眼睛（瞇著）
+      _hc.lerp(LIP, front*ss(Math.abs(uy + 0.43), 0.05, 0.02)*ss(az, 0.24, 0.18)*0.7);                    // 嘴唇
+      _hc.multiplyScalar(1 - 0.25*front*ss(Math.abs(uy + 0.3), 0.06, 0.0)*ss(az, 0.12, 0.05));          // 鼻子下方的陰影
+    }
+    hcol.push(_hc.r, _hc.g, _hc.b);
+  }
+  headGeo.setAttribute('color', new THREE.Float32BufferAttribute(hcol, 3)); headGeo.computeVertexNormals();
+  const headMesh = new THREE.Mesh(headGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62 }));
+  headMesh.castShadow = true;
+  // 耳朵
+  const ear = new THREE.SphereGeometry(1, 10, 8); ear.scale(0.016, 0.03, 0.01);
+  const earMat = MAT.skin;
+  const hg = new THREE.Group(); hg.add(headMesh);
+  for (const sg of [-1, 1]){ const e = new THREE.Mesh(ear, earMat); e.position.set(HC.x - 0.012, HC.y - 0.01, HC.z + sg*0.079); e.rotation.y = sg*0.3; hg.add(e); }
+  // 頭髮：黑短髮蓋住頭頂、後腦和兩側，瀏海；倒立時整把往地面（模型座標 +y）垂下，一綹一綹
+  {
+    const hairGeo = new THREE.SphereGeometry(1, 36, 26), q = hairGeo.attributes.position, keep = [];
+    for (let i = 0; i < q.count; i++){
+      const ux = q.getX(i), uy = q.getY(i), uz = q.getZ(i);
+      const line = ux > 0.55 ? 0.42 : ux > 0 ? lerp(0.12, 0.42, ux/0.55) : lerp(0.12, -0.35, Math.min(1, -ux/0.8));   // 髮際線：額頭高、兩側到耳上、後腦低
+      keep.push(uy > line - 0.04*Math.abs(uz));
+      const hang = ss(uy, line, line + 0.5)*0.05 + Math.max(0, uy)*0.025 + (vn(ux*7 + 3, uz*7 + uy*3) - 0.5)*0.02;
+      const r = 1.13 + (vn(ux*9, uz*9 + 2) - 0.5)*0.12;
+      q.setXYZ(i, ux*0.098*r + HC.x, uy*0.118*r + HC.y + hang, uz*0.079*r*1.08 + HC.z);
+    }
+    const ix = hairGeo.index.array, ni = [];
+    for (let t = 0; t < ix.length; t += 3) if (keep[ix[t]] && keep[ix[t+1]] && keep[ix[t+2]]) ni.push(ix[t], ix[t+1], ix[t+2]);
+    hairGeo.setIndex(ni); hairGeo.computeVertexNormals();
+    const hm = new THREE.Mesh(hairGeo, MAT.hair); hm.castShadow = true; hg.add(hm);
+    // 垂下的髮絲：細長的錐，從頭皮往「下」（倒立時是往地面）
+    const strands = [];
+    const rr = mulberry(77);
+    for (let k = 0; k < 90; k++){
+      const th = rr()*Math.PI*2, ph = rr()*0.9;
+      const u = new THREE.Vector3(Math.cos(th)*Math.sin(ph*1.6), Math.cos(ph*1.6), Math.sin(th)*Math.sin(ph*1.6));
+      if (u.x > 0.6 && u.y < 0.5) continue;
+      const len = 0.03 + rr()*0.05, c = new THREE.ConeGeometry(0.008 + rr()*0.006, len, 4);
+      c.translate(0, len/2, 0);
+      const dir = u.clone().multiplyScalar(0.35).add(new THREE.Vector3((rr() - 0.5)*0.3, 1, (rr() - 0.5)*0.3)).normalize();
+      c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+      c.translate(u.x*0.098*1.08 + HC.x, u.y*0.118*1.08 + HC.y + 0.01, u.z*0.079*1.12 + HC.z);
+      strands.push(c);
+    }
+    const sm = new THREE.Mesh(mergeGeometries(strands), MAT.hair); sm.castShadow = true; hg.add(sm);
+  }
+  root.add(hg); hg.updateMatrixWorld(true);
+  bones.spine005.attach(hg);
 
   const s = FIG_H / 1.95; root.scale.setScalar(s);
   body.add(root);
